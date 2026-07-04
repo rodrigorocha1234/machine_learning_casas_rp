@@ -1,0 +1,12 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+# Editor-based HTTP Client requests
+/httpRequests/
+/inspectionProfiles/profiles_settings.xml
+/inspectionProfiles/Project_Default.xml
+
+/machine_learning_casas_rp.iml
+/misc.xml
+/modules.xml
+/vcs.xml
