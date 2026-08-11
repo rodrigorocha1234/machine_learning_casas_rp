@@ -1,5 +1,6 @@
-from openpyxl import load_workbook
-wb = load_workbook("test.xlsx")
-ws = wb.active
-for row in ws.iter_rows(values_only=True):
-    print(row)
+from src.service_site.extracao_lago_imobiliaria import ExtracaoLagoImobiliaria
+
+eli = ExtracaoLagoImobiliaria(url='https://www.lagoimobiliaria.com.br/comprar/Ribeirao-Preto/Apartamento/Padrao/Campos-Eliseos/171029')
+
+eli.abrir_site()
+eli.obter_metragem()

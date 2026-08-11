@@ -1,3 +1,5 @@
+import re
+from time import sleep
 from typing import Generator
 
 from selenium import webdriver
@@ -12,7 +14,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 class ExtracaoLagoImobiliaria:
     def __init__(self, url: str):
         self.__options = Options()
-        # options.add_argument("--headless=new")
+        self.__options.add_argument("--headless=new")
         self.__servico = Service(ChromeDriverManager().install())
         self.__driver = webdriver.Chrome(service=self.__servico, options=self.__options)
         self.__driver.maximize_window()
@@ -47,6 +49,21 @@ class ExtracaoLagoImobiliaria:
             return True
         except:
             return False
+
+    def obter_metragem(self):
+        sleep(10)
+        self.__driver.execute_script(
+            "window.scrollTo(0, document.body.scrollHeight);"
+        )
+        area = self.__driver.find_element(By.CSS_SELECTOR, "strong.fw-bold").text.replace("m²", "").strip()
+
+        match = re.search(r"\d+(?:\.\d+)?", area)
+
+        if match:
+            numero = float(match.group())
+            print(numero)
+
+            return int(numero)
 
     def fechar_site(self):
         self.__driver.quit()
