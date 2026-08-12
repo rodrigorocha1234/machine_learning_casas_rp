@@ -1,2 +1,7 @@
-treinamento_simples:
-  regressao_linear_simples:
+modelo:
+
+  treinamento_simples:
+    dados_separacao:
+      dados_teste: 0.3
+      random_state: 42
+    regressao_linear_simples:
