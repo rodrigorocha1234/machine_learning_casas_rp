@@ -12,7 +12,7 @@ pd.set_option("display.max_colwidth", 50)  # Largura máxima das colunas
 pd.set_option("display.expand_frame_repr", False)  # Evita quebrar o DataFrame
 
 
-class CarregarDadosXLSX(ICarregarDados[pd.DataFrame]):
+class CarregarDadosXLSX:
 
     def __init__(self, colunas: list[str]):
         self.__colunas = colunas

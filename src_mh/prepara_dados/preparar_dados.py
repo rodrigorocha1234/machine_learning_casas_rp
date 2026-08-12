@@ -18,11 +18,7 @@ pd.set_option("display.expand_frame_repr", False)  # Evita quebrar o DataFrame
 
 
 class PrepararDadosDataFame(
-    IPrepararDados[
-        pd.DataFrame,
-        pd.DataFrame,
-        pd.Series
-    ]
+
 ):
     __MAPA_ZONAS: Final[dict[str, str]] = {
         'Adao do Carmo Leonel': 'Zona Norte', 'Adelino Simioni': 'Zona Norte',

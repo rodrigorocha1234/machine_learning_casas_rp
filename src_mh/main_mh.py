@@ -36,9 +36,8 @@ class PipelineML(Generic[T, X, Y]):
             .realizar_engenharia_atributos(base)
         )
 
-        print(base_dois)
 
-        # 3. Train/Test Split + preprocessing
+
         x_train, x_test, y_train, y_test = (
             self.__prepara_dados
             .separar_treino_teste(
