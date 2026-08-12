@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import TypeVar, Generic
+from typing import TypeVar, Generic, Literal
 
 T = TypeVar("T")
 
@@ -11,5 +11,5 @@ class IPrepararDados(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def separar_treino_teste(self, df_final: T) -> tuple[T, ...]:
+    def separar_treino_teste(self, df_final: T,  tipo_escalonamento: Literal["standard", "minmax", None]) -> tuple[T, ...]:
         pass

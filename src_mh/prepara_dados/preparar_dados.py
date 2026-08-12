@@ -1,10 +1,11 @@
 import os
-from typing import Final
+from typing import Final, Literal
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler, MinMaxScaler
 
 from src_mh.config.config import Config
 from src_mh.prepara_dados.iprepara_dados import IPrepararDados
@@ -169,46 +170,42 @@ class PrepararDadosDataFame(IPrepararDados[pd.DataFrame]):
         return df_m2
 
     def realizar_engenharia_atributos(self, df: pd.DataFrame) -> pd.DataFrame:
-
-        num_pipeline = Pipeline(steps=[
-            (
-                'feature_enginnering_zonas',
-                FunctionTransformer(
-                    self.__classificar_zonas, validate=False
-                )
-            ),
-            (
-                'feature_enginnering_media_valor_zona',
-                FunctionTransformer(
-                    self.__calcular_media_m2_zona, validate=False
-                )
-            )
-        ])
-
-        df_transformado = num_pipeline.fit_transform(df)
-        df_transformado.drop(columns=['Bairro', 'Valor_m2', 'Código'], inplace=True, errors='ignore')
-
-        categorical_cols = df_transformado.select_dtypes(include=['object', 'category']).columns.tolist()
-
+        # Passos manuais que necessitam acesso à base inteira e à variável alvo (Target Encoding)
+        df_copy = self.__classificar_zonas(df)
+        df_copy = self.__calcular_media_m2_zona(df_copy)
+        
+        # Remove colunas que podem causar Data Leakage ou dimensionalidade desnecessária
+        df_copy.drop(columns=['Bairro', 'Valor_m2', 'Código'], inplace=True, errors='ignore')
+        
+        return df_copy
+        
+    def construir_pipeline(self, categorical_cols: list, numerical_cols: list, tipo_escalonamento: Literal["standard", "minmax", None]) -> Pipeline:
+        transformers = []
+        
+        # 1. Tratamento de Categóricas
         if categorical_cols:
-            encoder = OneHotEncoder(sparse_output=False, drop='first')
-            encoded_data = encoder.fit_transform(df_transformado[categorical_cols])
+            transformers.append(('cat', OneHotEncoder(sparse_output=False, drop='first'), categorical_cols))
+            
+        # 2. Tratamento de Numéricas (Escalonamento)
+        if tipo_escalonamento:
+            if tipo_escalonamento.lower() == 'standard':
+                scaler = StandardScaler()
+            elif tipo_escalonamento.lower() == 'minmax':
+                scaler = MinMaxScaler()
+            else:
+                raise ValueError("tipo_escalonamento deve ser 'standard' ou 'minmax'")
+            transformers.append(('num', scaler, numerical_cols))
+        else:
+            # Se não houver escalonamento, apenas passa os números adiante
+            transformers.append(('num', 'passthrough', numerical_cols))
+            
+        # Monta o preprocessor mestre
+        preprocessor = ColumnTransformer(transformers=transformers, remainder='drop')
+        preprocessor.set_output(transform="pandas")
+        
+        return Pipeline(steps=[('preprocessor', preprocessor)])
 
-            encoded_df = pd.DataFrame(
-                encoded_data,
-                columns=encoder.get_feature_names_out(categorical_cols),
-                index=df_transformado.index
-            )
-
-            df_transformado = df_transformado.drop(columns=categorical_cols)
-            df_transformado = pd.concat([df_transformado, encoded_df], axis=1)
-
-        return df_transformado
-
-
-
-    def separar_treino_teste(self, df_final: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-
+    def separar_treino_teste(self, df_final: pd.DataFrame, tipo_escalonamento: Literal["standard", "minmax", None]) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
         x = df_final.drop(columns='Valor_da_Venda')
         y = df_final['Valor_da_Venda']
@@ -219,4 +216,21 @@ class PrepararDadosDataFame(IPrepararDados[pd.DataFrame]):
             test_size=Config.DADOS_TESTE,
             random_state=Config.RANDOM_STATE
         )
+
+        categorical_cols = x_train.select_dtypes(include=['object', 'category']).columns.tolist()
+        numerical_cols = x_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        
+        # 1. Instancia o pipeline oficial
+        pipeline = self.construir_pipeline(categorical_cols, numerical_cols, tipo_escalonamento)
+        
+        # 2. Fit and Transform exclusivo no x_train (evita leakage)
+        x_train = pipeline.fit_transform(x_train)
+        
+        # 3. Apenas Transform no x_test
+        x_test = pipeline.transform(x_test)
+        
+        # Limpar o prefixo 'cat__' ou 'num__' que o ColumnTransformer adiciona aos DataFrames
+        x_train.columns = [col.split('__')[-1] for col in x_train.columns]
+        x_test.columns = [col.split('__')[-1] for col in x_test.columns]
+
         return x_train, x_test, y_train, y_test

@@ -18,11 +18,13 @@ class PipelineML(Generic[T]):
     def rodar_preparacao_dados(self) -> tuple[T, T, T, T]:
         base: T = self.__carregar_dados.carregar_dados()
         base_dois: T = self.__prepara_dados.realizar_engenharia_atributos(base)
-        x_train, x_test, y_train, y_test = self.__prepara_dados.separar_treino_teste(base_dois)
+        print(base_dois)
+        x_train, x_test, y_train, y_test = self.__prepara_dados.separar_treino_teste(base_dois, tipo_escalonamento=None)
         return x_train, x_test, y_train, y_test
 
     def rodar_treinamento_simples(self):
         x_train, x_test, y_train, y_test = self.rodar_preparacao_dados()
+        print(x_train)
 
 
 if __name__ == "__main__":
