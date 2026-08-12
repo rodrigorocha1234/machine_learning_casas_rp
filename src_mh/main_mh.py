@@ -16,24 +16,21 @@ class PipelineML(Generic[T, U]):
         self.__carregar_dados = carregar_dados
         self.__prepara_dados = prepara_dados
 
-    def rodar_preparacao_dados(self):
+    def rodar_preparacao_dados(self) -> tuple[T, T, T, T]:
         base: T = self.__carregar_dados.carregar_dados()
         base: T = self.__prepara_dados.realizar_engenharia_atributos(base)
         x_train, x_test, y_train, y_test = self.__prepara_dados.separar_treino_teste(base)
+        return x_train, x_test, y_train, y_test
 
-        print(x_train)
-
-    def rodar_treinamento_simples(self) :
-        self.rodar_preparacao_dados()
-
-
+    def rodar_treinamento_simples(self):
+        x_train, x_test, y_train, y_test = self.rodar_preparacao_dados()
 
 
 if __name__ == "__main__":
     pml = PipelineML[pd.DataFrame, pd.DataFrame](
         carregar_dados=CarregarDadosXLSX(
             colunas=['Metragem', 'Quartos', 'Banheiros', 'Vagas', 'Bairro',
-                                                  'Valor_da_Venda']),
+                     'Valor_da_Venda']),
         prepara_dados=PrepararDadosDataFame()
 
     )
