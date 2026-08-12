@@ -18,7 +18,7 @@ class ArquivoExcel(Arquivo[Workbook, DadosExcel]):
         """Métod para criar o cabeçalho das colunas
 
         Args:
-            dados (Dict[str, Union[str, int]]): dados da req
+            dados (Dict[str, Union[str, int]]): carregador_dados da req
             aba (worksheet): nome da aba
 
         Returns:
@@ -36,10 +36,10 @@ class ArquivoExcel(Arquivo[Workbook, DadosExcel]):
         self.__nome_aba = nome_aba
 
     def salvar_dados(self, dados: List[Dict[str, Union[str, int]]]):
-        """Método para salvar os dados da planilha
+        """Método para salvar os carregador_dados da planilha
 
         Args:
-            dados (Dict[str, Union[str, int]]): dados
+            dados (Dict[str, Union[str, int]]): carregador_dados
         """
 
         if self.__nome_aba in self.__planilha.sheetnames:
@@ -61,10 +61,10 @@ class ArquivoExcel(Arquivo[Workbook, DadosExcel]):
         self.__planilha.save(self._caminho_arquivo)
 
     def atualizar_dados(self, dados: List[Dict[str, Union[str, int]]]):
-        """Método para atualizar dados da planilha
+        """Método para atualizar carregador_dados da planilha
 
         Args:
-            dados (Dict[str, Union[str, int]]): dados da req
+            dados (Dict[str, Union[str, int]]): carregador_dados da req
         """
         workbook = load_workbook(self._caminho_arquivo)
         if self.__nome_aba not in workbook.sheetnames:

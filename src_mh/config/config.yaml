@@ -1,5 +1,4 @@
 modelo:
-
   treinamento_simples:
     dados_separacao:
       dados_teste: 0.3

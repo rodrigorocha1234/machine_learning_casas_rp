@@ -6,6 +6,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
 
+from src_mh.config.config import Config
+from src_mh.prepara_dados.iprepara_dados import IPrepararDados
+
 pd.set_option("display.max_columns", None)  # Exibe todas as colunas
 pd.set_option("display.max_rows", 50)  # Máximo de linhas exibidas
 pd.set_option("display.width", 200)  # Largura do DataFrame
@@ -14,7 +17,7 @@ pd.set_option("display.max_colwidth", 50)  # Largura máxima das colunas
 pd.set_option("display.expand_frame_repr", False)  # Evita quebrar o DataFrame
 
 
-class CarregarDados:
+class PrepararDadosDataFame(IPrepararDados[pd.DataFrame]):
     __MAPA_ZONAS: Final[dict[str, str]] = {
         'Adao do Carmo Leonel': 'Zona Norte', 'Adelino Simioni': 'Zona Norte',
         'Alamedas do Botanico': 'Zona Sul', 'Alto da Boa Vista': 'Zona Oeste',
@@ -124,9 +127,6 @@ class CarregarDados:
         'Vila do Golf': 'Zona Sul'
     }
 
-    def __init__(self, colunas: list[str]):
-        self.__caminho_arquivo = os.path.join(os.getcwd(), "dados_imoveis/bairro_final_v3_engineered.xlsx")
-        self.__base = pd.read_excel(self.__caminho_arquivo, usecols=colunas)
 
     def __classificar_zonas(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -158,9 +158,8 @@ class CarregarDados:
         # 1. Cria a coluna de valor do m2 do imóvel individual
         df_m2["Valor_m2"] = df_m2["Valor_da_Venda"] / df_m2["Metragem"]
 
-        # Garantia de que a coluna Zona existe
-        if "Zona" not in df_m2.columns:
-            df_m2 = self.__classificar_zonas(df_m2)
+
+
 
         # 2. Mapeia a média do m² por Zona de volta para o DataFrame mantendo todas as linhas/colunas
         df_m2["Media_m2_Zona"] = df_m2.groupby("Zona")["Valor_m2"].transform(
@@ -169,7 +168,7 @@ class CarregarDados:
 
         return df_m2
 
-    def __realizar_engenharia_atributos(self) -> pd.DataFrame:
+    def realizar_engenharia_atributos(self, df: pd.DataFrame) -> pd.DataFrame:
 
         num_pipeline = Pipeline(steps=[
             (
@@ -186,26 +185,21 @@ class CarregarDados:
             )
         ])
 
-        df_transformado = num_pipeline.fit_transform(self.__base)
-        # Drop columns that shouldn't go into the model (Bairro is categorical redundant, Valor_m2 causes leakage)
+        df_transformado = num_pipeline.fit_transform(df)
         df_transformado.drop(columns=['Bairro', 'Valor_m2', 'Código'], inplace=True, errors='ignore')
-        
-        # Identificar colunas categóricas ('Zona', 'Apartamento', etc)
+
         categorical_cols = df_transformado.select_dtypes(include=['object', 'category']).columns.tolist()
-        
+
         if categorical_cols:
-            # Aplica o One-Hot Encoding
             encoder = OneHotEncoder(sparse_output=False, drop='first')
             encoded_data = encoder.fit_transform(df_transformado[categorical_cols])
-            
-            # Cria DataFrame com as novas colunas
+
             encoded_df = pd.DataFrame(
-                encoded_data, 
-                columns=encoder.get_feature_names_out(categorical_cols), 
+                encoded_data,
+                columns=encoder.get_feature_names_out(categorical_cols),
                 index=df_transformado.index
             )
-            
-            # Remove as categorias originais e junta as variáveis dummy
+
             df_transformado = df_transformado.drop(columns=categorical_cols)
             df_transformado = pd.concat([df_transformado, encoded_df], axis=1)
 
@@ -213,16 +207,16 @@ class CarregarDados:
 
 
 
-    def separar_treino_teste(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        
-        df_final = self.__realizar_engenharia_atributos()
+    def separar_treino_teste(self, df_final: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+
+
         x = df_final.drop(columns='Valor_da_Venda')
         y = df_final['Valor_da_Venda']
-        
+
         x_train, x_test, y_train, y_test = train_test_split(
             x,
             y,
-            test_size=0.3,
-            random_state=42
+            test_size=Config.DADOS_TESTE,
+            random_state=Config.RANDOM_STATE
         )
         return x_train, x_test, y_train, y_test

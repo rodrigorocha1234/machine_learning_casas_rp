@@ -12,7 +12,7 @@ sns.set_theme(style="whitegrid")
 output_dir = 'eda/plots'
 os.makedirs(output_dir, exist_ok=True)
 
-# Carregar os dados
+# Carregar os carregador_dados
 df = pd.read_excel('dados_imoveis/bairro_final_v3_engineered.xlsx')
 
 print("1. Estatísticas Descritivas:")
