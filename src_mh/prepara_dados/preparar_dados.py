@@ -1,11 +1,10 @@
-import os
 from typing import Final, Literal
 
 import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler, MinMaxScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, MinMaxScaler
 
 from src_mh.config.config import Config
 from src_mh.prepara_dados.iprepara_dados import IPrepararDados
@@ -18,7 +17,13 @@ pd.set_option("display.max_colwidth", 50)  # Largura máxima das colunas
 pd.set_option("display.expand_frame_repr", False)  # Evita quebrar o DataFrame
 
 
-class PrepararDadosDataFame(IPrepararDados[pd.DataFrame]):
+class PrepararDadosDataFame(
+    IPrepararDados[
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.Series
+    ]
+):
     __MAPA_ZONAS: Final[dict[str, str]] = {
         'Adao do Carmo Leonel': 'Zona Norte', 'Adelino Simioni': 'Zona Norte',
         'Alamedas do Botanico': 'Zona Sul', 'Alto da Boa Vista': 'Zona Oeste',
@@ -128,7 +133,6 @@ class PrepararDadosDataFame(IPrepararDados[pd.DataFrame]):
         'Vila do Golf': 'Zona Sul'
     }
 
-
     def __classificar_zonas(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Classifica os bairros em zonas da cidade.
@@ -159,9 +163,6 @@ class PrepararDadosDataFame(IPrepararDados[pd.DataFrame]):
         # 1. Cria a coluna de valor do m2 do imóvel individual
         df_m2["Valor_m2"] = df_m2["Valor_da_Venda"] / df_m2["Metragem"]
 
-
-
-
         # 2. Mapeia a média do m² por Zona de volta para o DataFrame mantendo todas as linhas/colunas
         df_m2["Media_m2_Zona"] = df_m2.groupby("Zona")["Valor_m2"].transform(
             "mean"
@@ -169,23 +170,27 @@ class PrepararDadosDataFame(IPrepararDados[pd.DataFrame]):
 
         return df_m2
 
-    def realizar_engenharia_atributos(self, df: pd.DataFrame) -> pd.DataFrame:
+    def realizar_engenharia_atributos(
+            self,
+            df: pd.DataFrame
+    ) -> pd.DataFrame:
         # Passos manuais que necessitam acesso à base inteira e à variável alvo (Target Encoding)
         df_copy = self.__classificar_zonas(df)
         df_copy = self.__calcular_media_m2_zona(df_copy)
-        
+
         # Remove colunas que podem causar Data Leakage ou dimensionalidade desnecessária
         df_copy.drop(columns=['Bairro', 'Valor_m2', 'Código'], inplace=True, errors='ignore')
-        
+
         return df_copy
-        
-    def construir_pipeline(self, categorical_cols: list, numerical_cols: list, tipo_escalonamento: Literal["standard", "minmax", None]) -> Pipeline:
+
+    def construir_pipeline(self, categorical_cols: list, numerical_cols: list,
+                           tipo_escalonamento: Literal["standard", "minmax", None]) -> Pipeline:
         transformers = []
-        
+
         # 1. Tratamento de Categóricas
         if categorical_cols:
             transformers.append(('cat', OneHotEncoder(sparse_output=False, drop='first'), categorical_cols))
-            
+
         # 2. Tratamento de Numéricas (Escalonamento)
         if tipo_escalonamento:
             if tipo_escalonamento.lower() == 'standard':
@@ -198,14 +203,23 @@ class PrepararDadosDataFame(IPrepararDados[pd.DataFrame]):
         else:
             # Se não houver escalonamento, apenas passa os números adiante
             transformers.append(('num', 'passthrough', numerical_cols))
-            
+
         # Monta o preprocessor mestre
         preprocessor = ColumnTransformer(transformers=transformers, remainder='drop')
         preprocessor.set_output(transform="pandas")
-        
+
         return Pipeline(steps=[('preprocessor', preprocessor)])
 
-    def separar_treino_teste(self, df_final: pd.DataFrame, tipo_escalonamento: Literal["standard", "minmax", None]) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def separar_treino_teste(
+            self,
+            df_final: pd.DataFrame,
+            tipo_escalonamento: Literal["standard", "minmax", None]
+    ) -> tuple[
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.Series,
+        pd.Series
+    ]:
 
         x = df_final.drop(columns='Valor_da_Venda')
         y = df_final['Valor_da_Venda']
@@ -219,16 +233,16 @@ class PrepararDadosDataFame(IPrepararDados[pd.DataFrame]):
 
         categorical_cols = x_train.select_dtypes(include=['object', 'category']).columns.tolist()
         numerical_cols = x_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
-        
+
         # 1. Instancia o pipeline oficial
         pipeline = self.construir_pipeline(categorical_cols, numerical_cols, tipo_escalonamento)
-        
+
         # 2. Fit and Transform exclusivo no x_train (evita leakage)
         x_train = pipeline.fit_transform(x_train)
-        
+
         # 3. Apenas Transform no x_test
         x_test = pipeline.transform(x_test)
-        
+
         # Limpar o prefixo 'cat__' ou 'num__' que o ColumnTransformer adiciona aos DataFrames
         x_train.columns = [col.split('__')[-1] for col in x_train.columns]
         x_test.columns = [col.split('__')[-1] for col in x_test.columns]

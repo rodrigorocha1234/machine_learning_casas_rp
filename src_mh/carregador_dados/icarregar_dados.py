@@ -1,11 +1,9 @@
-from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import Generic, Protocol, TypeVar
 
-T = TypeVar("T")
+T_co = TypeVar("T_co", covariant=True)
 
 
-class ICarregarDados(ABC, Generic[T]):
+class ICarregarDados(Protocol[T_co]):
 
-    @abstractmethod
-    def carregar_dados(self) -> T:
-        pass
+    def carregar_dados(self) -> T_co:
+        ...
