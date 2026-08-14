@@ -112,8 +112,6 @@ class RegressaoLinearEstrategia(EstrategiaModelo):
             "preco_medio_previsto": round(float(np.mean(y_pred_arr)), 2),
             "n_amostras": int(len(y_test_arr)),
 
-            # Curva de validação
-            "validation_curve": self.obter_curva_validacao(x_test, y_test),
 
             # Interpretabilidade
             "intercepto": round(float(self.__modelo.intercept_), 2),
