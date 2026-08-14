@@ -122,4 +122,5 @@ class RegressaoLinearEstrategia(EstrategiaModelo):
             "equacao_reta_geral": self.obter_equacao_reta_geral(),
         }
 
-
+    def realizar_validacao_cruzada(self, x: pd.DataFrame, y: pd.Series, iteracao: int) -> dict:
+        return {}
