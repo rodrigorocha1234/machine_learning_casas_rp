@@ -9,6 +9,9 @@ class EstrategiaModelo(Protocol):
     def nome(self) -> str:
         ...
 
+    def obter_curva_validacao(self, x: pd.DataFrame, y: pd.Series) -> dict[str, Any]:
+        ...
+    
     def obter_equacao_reta_geral(self) -> str:
         ...
 

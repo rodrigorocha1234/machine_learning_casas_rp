@@ -2,13 +2,14 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import (
     mean_absolute_error,
     mean_squared_error,
     median_absolute_error,
     r2_score,
 )
+from sklearn.model_selection import validation_curve
 
 from src_mh.estrategia_modelo.estrategia_modelo import EstrategiaModelo
 
@@ -57,6 +58,26 @@ class RegressaoLinearEstrategia(EstrategiaModelo):
 
         return "Valor_da_Venda = " + " ".join(termos)
 
+    def obter_curva_validacao(self, x: pd.DataFrame, y: pd.Series) -> dict[str, Any]:
+        """Calcula as pontuações da curva de validação (validation_curve)."""
+        train_scores, test_scores = validation_curve(
+            Ridge(fit_intercept=self.__modelo.fit_intercept),
+            x,
+            y,
+            param_name="alpha",
+            param_range=self.__param_range,
+            cv=5,
+            scoring="r2",
+        )
+        return {
+            "param_name": "alpha",
+            "param_range": self.__param_range.tolist(),
+            "train_scores_mean": [round(float(v), 4) for v in np.mean(train_scores, axis=1)],
+            "test_scores_mean": [round(float(v), 4) for v in np.mean(test_scores, axis=1)],
+            "train_scores_std": [round(float(v), 4) for v in np.std(train_scores, axis=1)],
+            "test_scores_std": [round(float(v), 4) for v in np.std(test_scores, axis=1)],
+        }
+
     def obter_resultados(self, x_test: pd.DataFrame, y_test: pd.Series) -> dict[str, Any]:
         y_pred = self.predizer(x_test)
         y_test_arr = np.asarray(y_test, dtype=float)
@@ -90,6 +111,9 @@ class RegressaoLinearEstrategia(EstrategiaModelo):
             "preco_medio_real": round(float(np.mean(y_test_arr)), 2),
             "preco_medio_previsto": round(float(np.mean(y_pred_arr)), 2),
             "n_amostras": int(len(y_test_arr)),
+
+            # Curva de validação
+            "validation_curve": self.obter_curva_validacao(x_test, y_test),
 
             # Interpretabilidade
             "intercepto": round(float(self.__modelo.intercept_), 2),
