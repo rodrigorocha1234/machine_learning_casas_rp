@@ -4,3 +4,7 @@ modelo:
       dados_teste: 0.3
       random_state: 42
     regressao_linear_simples:
+      fit_intercept: False
+      positive: True
+      copy_X: True
+      n_jobs: null

@@ -9,6 +9,9 @@ class EstrategiaModelo(Protocol):
     def nome(self) -> str:
         ...
 
+    def obter_equacao_reta_geral(self) -> str:
+        ...
+
     def treinar(self, x_train: pd.DataFrame, y_train: pd.Series) -> None:
         ...
 

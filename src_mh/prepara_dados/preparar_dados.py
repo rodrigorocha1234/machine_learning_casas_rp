@@ -18,7 +18,7 @@ pd.set_option("display.expand_frame_repr", False)  # Evita quebrar o DataFrame
 
 
 class PrepararDadosDataFame(
-
+    IPrepararDados[pd.DataFrame, pd.DataFrame, pd.Series]
 ):
     __MAPA_ZONAS: Final[dict[str, str]] = {
         'Adao do Carmo Leonel': 'Zona Norte', 'Adelino Simioni': 'Zona Norte',
@@ -142,40 +142,45 @@ class PrepararDadosDataFame(
         df_copy['Zona'] = df_copy['Bairro'].map(self.__MAPA_ZONAS).fillna('Centro/Outros')
         return df_copy
 
-    def __calcular_media_m2_zona(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Calcula o valor do m² e a média do m² por Zona,
+    def __calcular_media_m2_zona(
+            self,
+            x_train: pd.DataFrame,
+            y_train: pd.Series,
+            x_test: pd.DataFrame
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Calcula a média do m² por Zona exclusivamente no conjunto de treino
 
-        mantendo TODAS as colunas originais do DataFrame.
+        e mapeia no treino e no teste para evitar Target Leakage.
         """
-        if "Valor_da_Venda" not in df.columns or "Metragem" not in df.columns:
+        if "Metragem" not in x_train.columns or "Zona" not in x_train.columns:
             raise ValueError(
-                "O DataFrame deve conter as colunas 'Valor_da_Venda' e"
-                " 'Metragem'."
+                "x_train deve conter as colunas 'Metragem' e 'Zona'."
             )
 
-        # Copia o DataFrame recebido para preservar as colunas originais
-        df_m2 = df.copy()
+        valor_m2_treino = y_train / x_train["Metragem"]
+        media_m2_por_zona = valor_m2_treino.groupby(x_train["Zona"]).mean()
+        media_m2_global = valor_m2_treino.mean()
 
-        # 1. Cria a coluna de valor do m2 do imóvel individual
-        df_m2["Valor_m2"] = df_m2["Valor_da_Venda"] / df_m2["Metragem"]
+        x_train_copy = x_train.copy()
+        x_test_copy = x_test.copy()
 
-        # 2. Mapeia a média do m² por Zona de volta para o DataFrame mantendo todas as linhas/colunas
-        df_m2["Media_m2_Zona"] = df_m2.groupby("Zona")["Valor_m2"].transform(
-            "mean"
+        x_train_copy["Media_m2_Zona"] = (
+            x_train_copy["Zona"].map(media_m2_por_zona).fillna(media_m2_global)
+        )
+        x_test_copy["Media_m2_Zona"] = (
+            x_test_copy["Zona"].map(media_m2_por_zona).fillna(media_m2_global)
         )
 
-        return df_m2
+        return x_train_copy, x_test_copy
 
     def realizar_engenharia_atributos(
             self,
             df: pd.DataFrame
     ) -> pd.DataFrame:
-        # Passos manuais que necessitam acesso à base inteira e à variável alvo (Target Encoding)
         df_copy = self.__classificar_zonas(df)
-        df_copy = self.__calcular_media_m2_zona(df_copy)
 
-        # Remove colunas que podem causar Data Leakage ou dimensionalidade desnecessária
-        df_copy.drop(columns=['Bairro', 'Valor_m2', 'Código'], inplace=True, errors='ignore')
+        # Remove colunas que podem causar dimensionalidade desnecessária
+        df_copy.drop(columns=['Bairro', 'Código'], inplace=True, errors='ignore')
 
         return df_copy
 
@@ -226,6 +231,9 @@ class PrepararDadosDataFame(
             test_size=Config.DADOS_TESTE,
             random_state=Config.RANDOM_STATE
         )
+
+        # Calcula a média do m² por Zona estritamente sobre x_train/y_train para evitar Data Leakage
+        x_train, x_test = self.__calcular_media_m2_zona(x_train, y_train, x_test)
 
         categorical_cols = x_train.select_dtypes(include=['object', 'category']).columns.tolist()
         numerical_cols = x_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
