@@ -1,4 +1,4 @@
-from typing import Final, Literal
+from typing import Final, Literal, override
 
 import pandas as pd
 from sklearn.compose import ColumnTransformer
@@ -173,6 +173,7 @@ class PrepararDadosDataFame(
 
         return x_train_copy, x_test_copy
 
+    @override
     def realizar_engenharia_atributos(
             self,
             df: pd.DataFrame
@@ -211,6 +212,7 @@ class PrepararDadosDataFame(
 
         return Pipeline(steps=[('preprocessor', preprocessor)])
 
+    @override
     def separar_treino_teste(
             self,
             df_final: pd.DataFrame,

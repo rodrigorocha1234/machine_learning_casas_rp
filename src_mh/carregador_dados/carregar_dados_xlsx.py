@@ -1,4 +1,5 @@
 import os
+from typing import override
 
 import pandas as pd
 
@@ -12,12 +13,13 @@ pd.set_option("display.max_colwidth", 50)  # Largura máxima das colunas
 pd.set_option("display.expand_frame_repr", False)  # Evita quebrar o DataFrame
 
 
-class CarregarDadosXLSX:
+class CarregarDadosXLSX(ICarregarDados[pd.DataFrame]):
 
     def __init__(self, colunas: list[str]):
         self.__colunas = colunas
         self.__caminho_arquivo = os.path.join(os.getcwd(), "dados_imoveis/bairro_final_v3_engineered.xlsx")
 
+    @override
     def carregar_dados(self) -> pd.DataFrame:
         base = pd.read_excel(self.__caminho_arquivo, usecols=self.__colunas)
         return base

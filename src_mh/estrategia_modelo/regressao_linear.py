@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from typing import override
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import (
     mean_absolute_error,
@@ -20,13 +21,16 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
         self.__param_range = np.logspace(-3, 2, 10)
 
     @property
+    @override
     def nome(self) -> str:
         return "Regressão Linear"
 
+    @override
     def treinar(self, x_train: pd.DataFrame, y_train: pd.Series) -> None:
         self.__colunas = list(x_train.columns)
         self.__modelo.fit(x_train, y_train)
 
+    @override
     def predizer(self, x: pd.DataFrame) -> np.ndarray:
         return self.__modelo.predict(x)
 
@@ -56,6 +60,7 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
 
         return "Valor_da_Venda = " + " ".join(termos)
 
+    @override
     def obter_curva_validacao(self, x: pd.DataFrame, y: pd.Series) -> dict[str, object]:
         """Calcula as pontuações da curva de validação (validation_curve)."""
         train_scores, test_scores = validation_curve(
@@ -76,6 +81,7 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
             "test_scores_std": [round(float(v), 4) for v in np.std(test_scores, axis=1)],
         }
 
+    @override
     def obter_resultados(self, x_test: pd.DataFrame, y_test: pd.Series) -> dict[str, object]:
         y_pred = self.predizer(x_test)
         y_test_arr = np.asarray(y_test, dtype=float)
@@ -120,5 +126,6 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
             "equacao_reta_geral": self.obter_equacao_reta_geral(),
         }
 
+    @override
     def realizar_validacao_cruzada(self, x: pd.DataFrame, y: pd.Series, iteracao: int = 5) -> dict[str, object]:
         return {}
