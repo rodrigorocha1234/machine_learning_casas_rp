@@ -1,5 +1,3 @@
-from typing import Any
-
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression, Ridge
@@ -14,7 +12,7 @@ from sklearn.model_selection import validation_curve
 from src_mh.estrategia_modelo.estrategia_modelo import EstrategiaModelo
 
 
-class RegressaoLinearEstrategia(EstrategiaModelo):
+class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.ndarray]):
 
     def __init__(self, fit_intercept: bool = True):
         self.__modelo = LinearRegression(fit_intercept=fit_intercept)
@@ -58,7 +56,7 @@ class RegressaoLinearEstrategia(EstrategiaModelo):
 
         return "Valor_da_Venda = " + " ".join(termos)
 
-    def obter_curva_validacao(self, x: pd.DataFrame, y: pd.Series) -> dict[str, Any]:
+    def obter_curva_validacao(self, x: pd.DataFrame, y: pd.Series) -> dict[str, object]:
         """Calcula as pontuações da curva de validação (validation_curve)."""
         train_scores, test_scores = validation_curve(
             Ridge(fit_intercept=self.__modelo.fit_intercept),
@@ -78,7 +76,7 @@ class RegressaoLinearEstrategia(EstrategiaModelo):
             "test_scores_std": [round(float(v), 4) for v in np.std(test_scores, axis=1)],
         }
 
-    def obter_resultados(self, x_test: pd.DataFrame, y_test: pd.Series) -> dict[str, Any]:
+    def obter_resultados(self, x_test: pd.DataFrame, y_test: pd.Series) -> dict[str, object]:
         y_pred = self.predizer(x_test)
         y_test_arr = np.asarray(y_test, dtype=float)
         y_pred_arr = np.asarray(y_pred, dtype=float)
@@ -122,5 +120,5 @@ class RegressaoLinearEstrategia(EstrategiaModelo):
             "equacao_reta_geral": self.obter_equacao_reta_geral(),
         }
 
-    def realizar_validacao_cruzada(self, x: pd.DataFrame, y: pd.Series, iteracao: int) -> dict:
+    def realizar_validacao_cruzada(self, x: pd.DataFrame, y: pd.Series, iteracao: int = 5) -> dict[str, object]:
         return {}

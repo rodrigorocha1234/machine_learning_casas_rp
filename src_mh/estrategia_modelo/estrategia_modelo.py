@@ -1,42 +1,44 @@
-from abc import abstractmethod, ABC
-from typing import Any
+from abc import ABC, abstractmethod
+from typing import Generic, TypeVar
 
-import pandas as pd
+X_in = TypeVar("X_in")
+Y_in = TypeVar("Y_in")
+Y_out = TypeVar("Y_out")
 
 
-class EstrategiaModelo(ABC):
+class EstrategiaModelo(ABC, Generic[X_in, Y_in, Y_out]):
 
     @property
     @abstractmethod
     def nome(self) -> str:
-        ...
+        """Nome identificador do modelo."""
+        pass
 
     @abstractmethod
-    def obter_curva_validacao(self, x: pd.DataFrame, y: pd.Series) -> dict[str, Any]:
-        ...
+    def treinar(self, x_train: X_in, y_train: Y_in) -> None:
+        """Treina o modelo com os dados de treino fornecidos."""
+        pass
 
     @abstractmethod
-    def obter_equacao_reta_geral(self) -> str:
-        ...
+    def predizer(self, x: X_in) -> Y_out:
+        """Realiza predições utilizando o modelo treinado."""
+        pass
 
     @abstractmethod
-    def treinar(self, x_train: pd.DataFrame, y_train: pd.Series) -> None:
-        ...
+    def obter_resultados(self, x_test: X_in, y_test: Y_in) -> dict[str, object]:
+        """Avalia o modelo no conjunto de teste e retorna um dicionário de resultados."""
+        pass
 
-    @abstractmethod
-    def predizer(self, x: pd.DataFrame) -> Any:
-        ...
+    def obter_curva_validacao(self, x: X_in, y: Y_in) -> dict[str, object]:
+        """Calcula a curva de validação (opcional para modelos que suportam)."""
+        return {}
 
-    @abstractmethod
-    def obter_resultados(self, x_test: pd.DataFrame, y_test: pd.Series) -> dict[str, Any]:
-        ...
-
-    @abstractmethod
     def realizar_validacao_cruzada(
-            self,
-            x: pd.DataFrame,
-            y: pd.Series,
-            iteracao: int
-    ) -> dict:
-        ...
+        self,
+        x: X_in,
+        y: Y_in,
+        iteracao: int = 5
+    ) -> dict[str, object]:
+        """Realiza validação cruzada (opcional para modelos que suportam)."""
+        return {}
 
