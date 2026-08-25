@@ -1,6 +1,8 @@
+from typing import Any, override
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from typing import override
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import (
     mean_absolute_error,
@@ -8,12 +10,18 @@ from sklearn.metrics import (
     median_absolute_error,
     r2_score,
 )
-from sklearn.model_selection import validation_curve
+from sklearn.model_selection import (
+    GridSearchCV,
+    validation_curve,
+)
+from sklearn.pipeline import Pipeline
 
 from src_mh.estrategia_modelo.estrategia_modelo import EstrategiaModelo
 
 
-class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.ndarray]):
+class RegressaoLinearEstrategia(
+    EstrategiaModelo[pd.DataFrame, pd.Series, np.ndarray]
+):
 
     def __init__(self, fit_intercept: bool = True):
         self.__modelo = LinearRegression(fit_intercept=fit_intercept)
@@ -25,6 +33,11 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
     def nome(self) -> str:
         return "Regressão Linear"
 
+    @property
+    @override
+    def modelo_objeto(self) -> object:
+        return self.__modelo
+
     @override
     def treinar(self, x_train: pd.DataFrame, y_train: pd.Series) -> None:
         self.__colunas = list(x_train.columns)
@@ -34,6 +47,7 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
     def predizer(self, x: pd.DataFrame) -> np.ndarray:
         return self.__modelo.predict(x)
 
+    @override
     def obter_equacoes_por_zona(self) -> dict[str, float]:
         """Calcula o intercepto efetivo ajustado para cada zona da cidade."""
         intercepto_base = float(self.__modelo.intercept_)
@@ -48,6 +62,7 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
 
         return equacoes
 
+    @override
     def obter_equacao_reta_geral(self) -> str:
         """Gera a representação em texto da equação geral unificada da reta de regressão."""
         intercepto_base = round(float(self.__modelo.intercept_), 2)
@@ -61,7 +76,9 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
         return "Valor_da_Venda = " + " ".join(termos)
 
     @override
-    def obter_curva_validacao(self, x: pd.DataFrame, y: pd.Series) -> dict[str, object]:
+    def obter_curva_validacao(
+            self, x: pd.DataFrame, y: pd.Series
+    ) -> dict[str, object]:
         """Calcula as pontuações da curva de validação (validation_curve)."""
         train_scores, test_scores = validation_curve(
             Ridge(fit_intercept=self.__modelo.fit_intercept),
@@ -75,14 +92,107 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
         return {
             "param_name": "alpha",
             "param_range": self.__param_range.tolist(),
-            "train_scores_mean": [round(float(v), 4) for v in np.mean(train_scores, axis=1)],
-            "test_scores_mean": [round(float(v), 4) for v in np.mean(test_scores, axis=1)],
-            "train_scores_std": [round(float(v), 4) for v in np.std(train_scores, axis=1)],
-            "test_scores_std": [round(float(v), 4) for v in np.std(test_scores, axis=1)],
+            "train_scores_mean": [
+                round(float(v), 4) for v in np.mean(train_scores, axis=1)
+            ],
+            "test_scores_mean": [
+                round(float(v), 4) for v in np.mean(test_scores, axis=1)
+            ],
+            "train_scores_std": [
+                round(float(v), 4) for v in np.std(train_scores, axis=1)
+            ],
+            "test_scores_std": [
+                round(float(v), 4) for v in np.std(test_scores, axis=1)
+            ],
         }
 
     @override
-    def obter_resultados(self, x_test: pd.DataFrame, y_test: pd.Series) -> dict[str, object]:
+    def gerar_figura_underfit_overfit(
+            self, x: pd.DataFrame, y: pd.Series
+    ) -> plt.Figure:
+        """Gera a figura Matplotlib com a curva de Overfitting vs Underfitting (Bias vs Variance)."""
+        dados_curva = self.obter_curva_validacao(x, y)
+        alpha = dados_curva.get("param_range", [])
+        train_scores = dados_curva.get("train_scores_mean", [])
+        val_scores = dados_curva.get("test_scores_mean", [])
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.semilogx(
+            alpha,
+            train_scores,
+            marker="o",
+            linestyle="-",
+            color="#1f77b4",
+            label="Treino (Train Score)",
+        )
+        ax.semilogx(
+            alpha,
+            val_scores,
+            marker="o",
+            linestyle="--",
+            color="#ff7f0e",
+            label="Validação (Validation Score)",
+        )
+        ax.set_xlabel("alpha (Regularização)")
+        ax.set_ylabel("Pontuação / Score (R²)")
+        ax.set_title(
+            "Regressão Linear Regularizada — Bias vs Variance",
+            fontweight="bold",
+        )
+        ax.legend(loc="best")
+        ax.grid(True, linestyle=":", alpha=0.6)
+        fig.tight_layout()
+        return fig
+
+    @override
+    def realizar_grid_search(
+            self, x: pd.DataFrame, y: pd.Series
+    ) -> GridSearchCV:
+        """Executa busca em grade de hiperparâmetros (GridSearchCV) para encontrar o alpha ideal."""
+        pipeline = Pipeline([("regressor", Ridge(fit_intercept=self.__modelo.fit_intercept))])
+        param_grid = {"regressor__alpha": self.__param_range.tolist()}
+
+        grid_search = GridSearchCV(
+            estimator=pipeline,
+            param_grid=param_grid,
+            scoring="neg_root_mean_squared_error",
+            cv=5,
+            n_jobs=4,
+            verbose=1,
+            return_train_score=True,
+        )
+
+        grid_search.fit(x, y)
+        return grid_search
+
+    @override
+    def obter_resultado_grid_search(
+            self, grid_search: GridSearchCV
+    ) -> dict[str, Any]:
+        """Extrai e estrutura os resultados detalhados da busca em grade (GridSearchCV)."""
+        if not hasattr(grid_search, "best_params_"):
+            return {}
+
+        best_index = int(grid_search.best_index_)
+        cv_results = grid_search.cv_results_
+
+        return {
+            "melhores_parametros": grid_search.best_params_,
+            "melhor_score_cv": round(float(grid_search.best_score_), 4),
+            "score_medio_treino": round(
+                float(cv_results["mean_test_score"][best_index]), 4
+            ),
+            "desvio_padrao_cv": round(
+                float(cv_results["std_test_score"][best_index]), 4
+            ),
+            "n_splits": int(grid_search.n_splits_),
+            "melhor_estimador": str(grid_search.best_estimator_),
+        }
+
+    @override
+    def obter_resultados(
+            self, x_test: pd.DataFrame, y_test: pd.Series
+    ) -> dict[str, object]:
         y_pred = self.predizer(x_test)
         y_test_arr = np.asarray(y_test, dtype=float)
         y_pred_arr = np.asarray(y_pred, dtype=float)
@@ -93,9 +203,17 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
         medae = median_absolute_error(y_test_arr, y_pred_arr)
         r2 = r2_score(y_test_arr, y_pred_arr)
 
-        smape = 100 * np.mean(2 * np.abs(y_pred_arr - y_test_arr) / (np.abs(y_test_arr) + np.abs(y_pred_arr) + 1e-8))
+        smape = 100 * np.mean(
+            2
+            * np.abs(y_pred_arr - y_test_arr)
+            / (np.abs(y_test_arr) + np.abs(y_pred_arr) + 1e-8)
+        )
         bias = np.mean(y_pred_arr - y_test_arr)
-        acc_10 = np.mean(np.abs(y_pred_arr - y_test_arr) / np.maximum(np.abs(y_test_arr), 1e-8) <= 0.10)
+        acc_10 = np.mean(
+            np.abs(y_pred_arr - y_test_arr)
+            / np.maximum(np.abs(y_test_arr), 1e-8)
+            <= 0.10
+        )
 
         coeficientes_dict = {
             col: round(float(coef), 2)
@@ -111,21 +229,10 @@ class RegressaoLinearEstrategia(EstrategiaModelo[pd.DataFrame, pd.Series, np.nda
             "r2": round(float(r2), 4),
             "bias": round(float(bias), 2),
             "accuracy_erro_10_pct": round(float(acc_10), 4),
-
             "preco_medio_real": round(float(np.mean(y_test_arr)), 2),
             "preco_medio_previsto": round(float(np.mean(y_pred_arr)), 2),
             "n_amostras": int(len(y_test_arr)),
-
-            # Curva de validação
-            # "validation_curve": self.obter_curva_validacao(x_test, y_test),
-
             # Interpretabilidade
             "intercepto": round(float(self.__modelo.intercept_), 2),
             "coeficientes": coeficientes_dict,
-            "interceptos_por_zona": self.obter_equacoes_por_zona(),
-            "equacao_reta_geral": self.obter_equacao_reta_geral(),
         }
-
-    @override
-    def realizar_validacao_cruzada(self, x: pd.DataFrame, y: pd.Series, iteracao: int = 5) -> dict[str, object]:
-        return {}
