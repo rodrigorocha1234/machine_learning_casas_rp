@@ -3,8 +3,27 @@ modelo:
     dados_separacao:
       dados_teste: 0.3
       random_state: 42
-    regressao_linear_simples:
-      fit_intercept: False
-      positive: True
-      copy_X: True
-      n_jobs: null
+    regressao_linear:
+      fit_intercept: true
+      param_range_start: -3
+      param_range_end: 2
+      param_range_num: 10
+      cv_folds: 5
+      scoring: "neg_root_mean_squared_error"
+      n_jobs: 4
+      param_grid:
+        regressor__alpha: [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+
+mlflow:
+  tracking_uri: "http://localhost:5000"
+  nome_experimento: "Experimento_Previsão_Apartamentos_RP"
+  nome_modelo_registry: "Modelo_Preco_Imoveis_RP"
+
+carregador_dados:
+  colunas:
+    - "Metragem"
+    - "Quartos"
+    - "Banheiros"
+    - "Vagas"
+    - "Bairro"
+    - "Valor_da_Venda"

@@ -5,6 +5,7 @@ import pandas as pd
 
 from src_mh.carregador_dados.carregar_dados_xlsx import CarregarDadosXLSX
 from src_mh.carregador_dados.icarregar_dados import ICarregarDados
+from src_mh.config import obter_config_carregador_dados, obter_config_mlflow
 from src_mh.estrategia_modelo.estrategia_modelo import EstrategiaModelo
 from src_mh.estrategia_modelo.regressao_linear import RegressaoLinearEstrategia
 from src_mh.observadores.console_observador import ConsoleObservador
@@ -27,11 +28,11 @@ Y = TypeVar("Y", bound=pd.Series)
 class PipelineML(Generic[T, X, Y]):
 
     def __init__(
-        self,
-        carregar_dados: ICarregarDados[T],
-        prepara_dados: IPrepararDados[T, X, Y],
-        modelos: Sequence[EstrategiaModelo[X, Y, Any]],
-        observadores: list[IObservadorML] | None = None,
+            self,
+            carregar_dados: ICarregarDados[T],
+            prepara_dados: IPrepararDados[T, X, Y],
+            modelos: Sequence[EstrategiaModelo[X, Y, Any]],
+            observadores: list[IObservadorML] | None = None,
     ):
         self.__carregar_dados = carregar_dados
         self.__prepara_dados = prepara_dados
@@ -43,13 +44,13 @@ class PipelineML(Generic[T, X, Y]):
         self.__observadores.append(observador)
 
     def __notificar_inicio_experimento(
-        self, nome_experimento: str, parametros: dict[str, object]
+            self, nome_experimento: str, parametros: dict[str, object]
     ) -> None:
         for obs in self.__observadores:
             obs.iniciar_experimento(nome_experimento, parametros)
 
     def __notificar_metricas(
-        self, nome_modelo: str, metricas: dict[str, object]
+            self, nome_modelo: str, metricas: dict[str, object]
     ) -> None:
         for obs in self.__observadores:
             obs.registrar_metricas(nome_modelo, metricas)
@@ -96,8 +97,6 @@ class PipelineML(Generic[T, X, Y]):
             interceptos_zona = modelo.obter_equacoes_por_zona()
             figura_underfit = modelo.gerar_figura_underfit_overfit(x_test, y_test)
             resultado_cv = modelo.realizar_validacao_cruzada(x_train, y_train, iteracao=42)
-            # grid_search_obj = modelo.realizar_grid_search(x_train, y_train)
-            # resultado_grid = modelo.obter_resultado_grid_search(grid_search_obj)
 
             resultados_completos: dict[str, object] = {
                 **metricas,
@@ -114,9 +113,6 @@ class PipelineML(Generic[T, X, Y]):
 
             if resultado_cv:
                 resultados_completos["validacao_cruzada"] = resultado_cv
-            #
-            # if resultado_grid:
-            #     resultados_completos["resultado_grid_search"] = resultado_grid
 
             if modelo.modelo_objeto is not None:
                 resultados_completos["modelo_objeto"] = modelo.modelo_objeto
@@ -132,31 +128,82 @@ class PipelineML(Generic[T, X, Y]):
         # Notifica conclusão do experimento
         self.__notificar_fim_experimento()
 
+    def realizar_tuning_parametros(self) -> None:
+        """Alias amigável para realizar_turing_parametros."""
+        """Executa a busca em grade (GridSearchCV / Tuning) para todos os modelos e envia os resultados aos observadores (MLflow, Console)."""
+        x_train, x_test, y_train, y_test = self.rodar_preparacao_dados()
+        x_completo = pd.concat([x_train, x_test], axis=0)
+        y_completo = pd.concat([y_train, y_test], axis=0)
+
+        logger.info("INICIANDO BUSCA EM GRADE (GRIDSEARCHCV / TUNING) DE MODELOS NO PIPELINE ML")
+
+        self.__notificar_inicio_experimento(
+            "Tuning_Parametros_Imoveis_RP",
+            {
+                "n_amostras_totais": len(x_completo),
+                "n_modelos": len(self.__modelos),
+            },
+        )
+
+        for modelo in self.__modelos:
+            logger.info("Executando Grid Search para Modelo: %s", modelo.nome)
+            grid_search = modelo.realizar_grid_search(x_completo, y_completo)
+            resultados_grid = modelo.obter_resultado_grid_search(grid_search)
+
+            resultados_completos: dict[str, object] = {
+                **resultados_grid,
+                "melhores_parametros": grid_search.best_params_,
+                "melhor_score": float(grid_search.best_score_),
+            }
+
+            if hasattr(grid_search, "best_estimator_") and grid_search.best_estimator_ is not None:
+                resultados_completos["modelo_objeto"] = grid_search.best_estimator_
+                x_sample = x_test.head(5)
+                resultados_completos["x_sample"] = x_sample
+                try:
+                    resultados_completos["y_sample"] = grid_search.best_estimator_.predict(x_sample)
+                except Exception as e:
+                    logger.warning("Falha ao calcular y_sample para a assinatura no MLflow: %s", e)
+
+            logger.info("Resultados de Grid Search de %s: %s", modelo.nome, resultados_completos)
+
+            # Notifica os observadores transmitindo o dicionário de resultados do Tuning
+            self.__notificar_metricas(modelo.nome, resultados_completos)
+
+        # Notifica conclusão do experimento
+        self.__notificar_fim_experimento()
+
 
 if __name__ == "__main__":
+    cfg_dados = obter_config_carregador_dados()
+    cfg_mlflow = obter_config_mlflow()
 
     carregar_dados = CarregarDadosXLSX(
-        colunas=[
-            "Metragem",
-            "Quartos",
-            "Banheiros",
-            "Vagas",
-            "Bairro",
-            "Valor_da_Venda",
-        ]
+        colunas=cfg_dados.get(
+            "colunas",
+            [
+                "Metragem",
+                "Quartos",
+                "Banheiros",
+                "Vagas",
+                "Bairro",
+                "Valor_da_Venda",
+            ],
+        )
     )
 
     prepara_dados: IPrepararDados[
         pd.DataFrame, pd.DataFrame, pd.Series
     ] = PrepararDadosDataFame()
 
+    # Instancia os modelos lendo as configurações centralizadas de model_config.yaml
     modelo_regressao_linear = RegressaoLinearEstrategia()
 
-    # Instanciando observadores (MLflow + Console) com suporte ao Model Registry
+    # Instanciando observadores (MLflow + Console) com suporte ao Model Registry centralizado
     mlflow_obs = MLflowObservador(
-        tracking_uri="http://localhost:5000",
-        nome_experimento="Experimento_Previsão_Apartamentos_RP",
-        nome_modelo_registry="Modelo_Preco_Imoveis_RP",
+        tracking_uri=cfg_mlflow.get("tracking_uri", "http://localhost:5000"),
+        nome_experimento=cfg_mlflow.get("nome_experimento", "Experimento_Previsão_Apartamentos_RP"),
+        nome_modelo_registry=cfg_mlflow.get("nome_modelo_registry", "Modelo_Preco_Imoveis_RP"),
     )
     console_obs = ConsoleObservador()
 
@@ -166,5 +213,6 @@ if __name__ == "__main__":
         modelos=[modelo_regressao_linear],
         observadores=[console_obs, mlflow_obs],  # Registro dos observadores
     )
-
-    pml.rodar_treinamento_simples()
+    #
+    # pml.rodar_treinamento_simples()
+    pml.realizar_turing_parametros()

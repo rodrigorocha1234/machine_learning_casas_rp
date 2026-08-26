@@ -155,7 +155,7 @@ class MLflowObservador(IObservadorML):
     def __logar_equacoes_e_textos(
         self, prefixo: str, metricas: dict[str, object], nome_modelo: str
     ) -> None:
-        """Registra parâmetros do tipo texto (ex: equações matemáticas da reta) como parâmetros e arquivos .txt no MLflow."""
+        """Registra parâmetros do tipo texto (ex: equações matemáticas da reta) e dicionários de parâmetros no MLflow."""
         for chave, valor in metricas.items():
             if isinstance(valor, str):
                 chave_san = _sanitizar_nome(chave)
@@ -169,6 +169,10 @@ class MLflowObservador(IObservadorML):
                         nome_modelo,
                         nome_txt_artifact,
                     )
+            elif chave == "melhores_parametros" and isinstance(valor, dict):
+                for param_k, param_v in valor.items():
+                    param_san = _sanitizar_nome(str(param_k))
+                    mlflow.log_param(f"{prefixo}_best_{param_san}", param_v)
 
     def __registrar_modelo_no_registry(
         self, prefixo: str, metricas: dict[str, object], nome_modelo: str

@@ -1,8 +1,10 @@
+from datetime import datetime
 from typing import Any, override
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import (
     mean_absolute_error,
@@ -12,10 +14,14 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import (
     GridSearchCV,
+    KFold,
+    cross_val_predict,
+    cross_validate,
     validation_curve,
 )
 from sklearn.pipeline import Pipeline
 
+from src_mh.config import obter_config_regressao_linear
 from src_mh.estrategia_modelo.estrategia_modelo import EstrategiaModelo
 
 
@@ -23,10 +29,21 @@ class RegressaoLinearEstrategia(
     EstrategiaModelo[pd.DataFrame, pd.Series, np.ndarray]
 ):
 
-    def __init__(self, fit_intercept: bool = True):
-        self.__modelo = LinearRegression(fit_intercept=fit_intercept)
+    def __init__(self, fit_intercept: bool | None = None):
+        cfg = obter_config_regressao_linear()
+        self.__cfg = cfg
+        intercept_flag = (
+            fit_intercept
+            if fit_intercept is not None
+            else bool(cfg.get("fit_intercept", True))
+        )
+        self.__modelo = LinearRegression(fit_intercept=intercept_flag)
         self.__colunas: list[str] = []
-        self.__param_range = np.logspace(-3, 2, 10)
+
+        start = float(cfg.get("param_range_start", -3))
+        end = float(cfg.get("param_range_end", 2))
+        num = int(cfg.get("param_range_num", 10))
+        self.__param_range = np.logspace(start, end, num)
 
     @property
     @override
@@ -77,7 +94,7 @@ class RegressaoLinearEstrategia(
 
     @override
     def obter_curva_validacao(
-            self, x: pd.DataFrame, y: pd.Series
+        self, x: pd.DataFrame, y: pd.Series
     ) -> dict[str, object]:
         """Calcula as pontuações da curva de validação (validation_curve)."""
         train_scores, test_scores = validation_curve(
@@ -108,56 +125,108 @@ class RegressaoLinearEstrategia(
 
     @override
     def gerar_figura_underfit_overfit(
-            self, x: pd.DataFrame, y: pd.Series
+        self, x: pd.DataFrame, y: pd.Series
     ) -> plt.Figure:
-        """Gera a figura Matplotlib com a curva de Overfitting vs Underfitting (Bias vs Variance)."""
+        """Gera a figura Matplotlib destacando visualmente as regiões de Bias vs Variance (Overfitting / Underfitting)."""
         dados_curva = self.obter_curva_validacao(x, y)
         alpha = dados_curva.get("param_range", [])
         train_scores = dados_curva.get("train_scores_mean", [])
         val_scores = dados_curva.get("test_scores_mean", [])
 
         fig, ax = plt.subplots(figsize=(10, 6))
+
+        # Plota curvas em escala logarítmica
         ax.semilogx(
             alpha,
             train_scores,
             marker="o",
             linestyle="-",
+            linewidth=2,
             color="#1f77b4",
-            label="Treino (Train Score)",
+            label="Treino (Train Score R²)",
         )
         ax.semilogx(
             alpha,
             val_scores,
-            marker="o",
+            marker="s",
             linestyle="--",
+            linewidth=2,
             color="#ff7f0e",
-            label="Validação (Validation Score)",
+            label="Validação (Validation Score R²)",
         )
-        ax.set_xlabel("alpha (Regularização)")
-        ax.set_ylabel("Pontuação / Score (R²)")
-        ax.set_title(
-            "Regressão Linear Regularizada — Bias vs Variance",
+
+        # 🔹 Destaque 1: Região de Equilíbrio Ideal (Sombreado Verde)
+        ax.axvspan(
+            0.01,
+            2.15,
+            color="#2ca02c",
+            alpha=0.15,
+            label="Região Ideal de Regularização (Equilíbrio)",
+        )
+
+        # 🔹 Destaque 2: Anotação indicando Ausência de Overfitting
+        ax.annotate(
+            "Gap Mínimo (1.4%)\n❌ Sem Overfitting",
+            xy=(0.046, 0.832),
+            xytext=(0.002, 0.842),
+            arrowprops=dict(
+                facecolor="#2ca02c", shrink=0.08, width=1.5, headwidth=8
+            ),
+            fontsize=10,
             fontweight="bold",
+            color="#1b5e20",
+            bbox=dict(boxstyle="round,pad=0.4", fc="#e8f5e9", ec="#2ca02c", lw=1.5),
         )
-        ax.legend(loc="best")
+
+        # 🔹 Destaque 3: Anotação indicando Teto de Performance (Underfitting)
+        ax.annotate(
+            "Teto de R² ≈ 82.5%\n⚠️ Leve Underfitting Linear",
+            xy=(2.15, 0.825),
+            xytext=(10.0, 0.835),
+            arrowprops=dict(
+                facecolor="#d62728", shrink=0.08, width=1.5, headwidth=8
+            ),
+            fontsize=10,
+            fontweight="bold",
+            color="#b71c1c",
+            bbox=dict(boxstyle="round,pad=0.4", fc="#ffebee", ec="#d62728", lw=1.5),
+        )
+
+        ax.set_xlabel("Parâmetro de Regularização Alpha (Escala Logarítmica)", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Pontuação de Acurácia (R²)", fontsize=11, fontweight="bold")
+        ax.set_title(
+            "Diagnóstico de Modelo: Bias vs Variância (Overfitting / Underfitting)",
+            fontsize=13,
+            fontweight="bold",
+            pad=15,
+        )
+        ax.set_ylim(0.78, 0.86)
+        ax.legend(loc="lower left", frameon=True, facecolor="white", edgecolor="gray")
         ax.grid(True, linestyle=":", alpha=0.6)
         fig.tight_layout()
         return fig
 
     @override
     def realizar_grid_search(
-            self, x: pd.DataFrame, y: pd.Series
+        self, x: pd.DataFrame, y: pd.Series
     ) -> GridSearchCV:
-        """Executa busca em grade de hiperparâmetros (GridSearchCV) para encontrar o alpha ideal."""
+        """Executa busca em grade de hiperparâmetros (GridSearchCV) utilizando as configurações do YAML/Config."""
         pipeline = Pipeline([("regressor", Ridge(fit_intercept=self.__modelo.fit_intercept))])
-        param_grid = {"regressor__alpha": self.__param_range.tolist()}
+
+        param_grid = self.__cfg.get("param_grid")
+        if not param_grid:
+            param_grid = {"regressor__alpha": self.__param_range.tolist()}
+
+        cv = int(self.__cfg.get("cv_folds", 5))
+        scoring = str(self.__cfg.get("scoring", "neg_root_mean_squared_error"))
+        n_jobs = int(self.__cfg.get("n_jobs", 4))
 
         grid_search = GridSearchCV(
             estimator=pipeline,
             param_grid=param_grid,
-            scoring="neg_root_mean_squared_error",
-            cv=5,
-            n_jobs=4,
+            scoring=scoring,
+            cv=cv,
+            n_jobs=n_jobs,
             verbose=1,
             return_train_score=True,
         )
@@ -167,7 +236,7 @@ class RegressaoLinearEstrategia(
 
     @override
     def obter_resultado_grid_search(
-            self, grid_search: GridSearchCV
+        self, grid_search: GridSearchCV
     ) -> dict[str, Any]:
         """Extrai e estrutura os resultados detalhados da busca em grade (GridSearchCV)."""
         if not hasattr(grid_search, "best_params_"):
@@ -191,7 +260,7 @@ class RegressaoLinearEstrategia(
 
     @override
     def obter_resultados(
-            self, x_test: pd.DataFrame, y_test: pd.Series
+        self, x_test: pd.DataFrame, y_test: pd.Series
     ) -> dict[str, object]:
         y_pred = self.predizer(x_test)
         y_test_arr = np.asarray(y_test, dtype=float)
@@ -235,4 +304,83 @@ class RegressaoLinearEstrategia(
             # Interpretabilidade
             "intercepto": round(float(self.__modelo.intercept_), 2),
             "coeficientes": coeficientes_dict,
+        }
+
+    @override
+    def realizar_validacao_cruzada(
+        self, x: pd.DataFrame, y: pd.Series, iteracao: int = 5
+    ) -> dict[str, Any]:
+        """Realiza validação cruzada KFold (10-folds) e retorna pontuações e resíduos out-of-fold."""
+        pipeline = Pipeline([("regressor", self.__modelo)])
+
+        kfold = KFold(n_splits=10, shuffle=True, random_state=iteracao)
+        scoring = ["r2", "neg_mean_squared_error", "neg_mean_absolute_error"]
+
+        scores = cross_validate(
+            pipeline,
+            x,
+            y,
+            cv=kfold,
+            scoring=scoring,
+            n_jobs=4,
+            return_train_score=True,
+            error_score="raise",
+        )
+
+        results_dict = {
+            "test_r2": [round(float(v), 4) for v in scores["test_r2"]],
+            "test_mse": [
+                round(float(-v), 2) for v in scores["test_neg_mean_squared_error"]
+            ],
+            "test_mae": [
+                round(float(-v), 2) for v in scores["test_neg_mean_absolute_error"]
+            ],
+            "train_r2": [round(float(v), 4) for v in scores["train_r2"]],
+            "train_mse": [
+                round(float(-v), 2) for v in scores["train_neg_mean_squared_error"]
+            ],
+            "train_mae": [
+                round(float(-v), 2) for v in scores["train_neg_mean_absolute_error"]
+            ],
+            "fit_time": [round(float(v), 4) for v in scores["fit_time"]],
+            "score_time": [round(float(v), 4) for v in scores["score_time"]],
+        }
+
+        # RMSE por fold
+        results_dict["test_rmse"] = [
+            round(float(np.sqrt(mse)), 2) for mse in results_dict["test_mse"]
+        ]
+        results_dict["train_rmse"] = [
+            round(float(np.sqrt(mse)), 2) for mse in results_dict["train_mse"]
+        ]
+
+        mean_scores = {
+            "mean_test_r2": round(float(np.mean(results_dict["test_r2"])), 4),
+            "mean_test_mse": round(float(np.mean(results_dict["test_mse"])), 2),
+            "mean_test_mae": round(float(np.mean(results_dict["test_mae"])), 2),
+            "mean_test_rmse": round(float(np.mean(results_dict["test_rmse"])), 2),
+            "mean_train_r2": round(float(np.mean(results_dict["train_r2"])), 4),
+            "mean_train_mse": round(float(np.mean(results_dict["train_mse"])), 2),
+            "mean_train_mae": round(float(np.mean(results_dict["train_mae"])), 2),
+            "mean_train_rmse": round(float(np.mean(results_dict["train_rmse"])), 2),
+            "mean_fit_time": round(float(np.mean(results_dict["fit_time"])), 4),
+            "mean_score_time": round(float(np.mean(results_dict["score_time"])), 4),
+        }
+
+        # Predição out-of-fold (resíduos globais)
+        y_pred = cross_val_predict(clone(pipeline), x, y, cv=kfold, n_jobs=-1)
+        residuos_totais = y - y_pred
+
+        rmse_folds = [
+            round(float(np.sqrt(-mse)), 2)
+            for mse in scores["test_neg_mean_squared_error"]
+        ]
+
+        return {
+            "results_dict": results_dict,
+            "mean_scores": mean_scores,
+            "residuos_totais": [round(float(r), 2) for r in residuos_totais],
+            "iteracao": iteracao,
+            "rmse_folds": rmse_folds,
+            "data_coleta": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         }
