@@ -104,16 +104,19 @@ class MLflowObservador(IObservadorML):
             if mlflow.active_run():
                 prefixo = _sanitizar_nome(nome_modelo)
 
-                # 1. Registra métricas numéricas em lote (Batching)
+                # 1. Registra parâmetros da busca em grade (hiperparâmetros otimizados)
+                self.__logar_parametros_tuning(prefixo, metricas, nome_modelo)
+
+                # 2. Registra métricas numéricas em lote (Batching)
                 self.__logar_metricas_em_lote(prefixo, metricas, nome_modelo)
 
-                # 2. Registra gráficos e figuras Matplotlib como artefatos de imagem
+                # 3. Registra gráficos e figuras Matplotlib como artefatos de imagem
                 self.__logar_figuras_matplotlib(prefixo, metricas, nome_modelo)
 
-                # 3. Registra equações matemáticas e parâmetros textuais
+                # 4. Registra equações matemáticas e parâmetros textuais
                 self.__logar_equacoes_e_textos(prefixo, metricas, nome_modelo)
 
-                # 4. Registra o estimador treinado com Assinatura (Schema Inputs & Outputs) no Model Registry
+                # 5. Registra o estimador treinado com Assinatura (Schema Inputs & Outputs) no Model Registry
                 self.__registrar_modelo_no_registry(prefixo, metricas, nome_modelo)
 
         except Exception as e:
@@ -121,6 +124,24 @@ class MLflowObservador(IObservadorML):
                 "⚠️ [MLflowObservador] Aviso ao processar eventos no MLflow: %s",
                 e,
             )
+
+    def __logar_parametros_tuning(
+        self, prefixo: str, metricas: dict[str, object], nome_modelo: str
+    ) -> None:
+        """Registra parâmetros do tuning (best_params_) no MLflow."""
+        melhores_params = metricas.get("melhores_parametros")
+        if isinstance(melhores_params, dict):
+            params_sanitizados = {
+                f"{prefixo}_{_sanitizar_nome(str(k))}": str(v)
+                for k, v in melhores_params.items()
+            }
+            if params_sanitizados:
+                mlflow.log_params(params_sanitizados)
+                logger.info(
+                    "Parâmetros de tuning do modelo '%s' (%d params) registrados no MLflow.",
+                    nome_modelo,
+                    len(params_sanitizados),
+                )
 
     def __logar_metricas_em_lote(
         self, prefixo: str, metricas: dict[str, object], nome_modelo: str
@@ -155,7 +176,7 @@ class MLflowObservador(IObservadorML):
     def __logar_equacoes_e_textos(
         self, prefixo: str, metricas: dict[str, object], nome_modelo: str
     ) -> None:
-        """Registra parâmetros do tipo texto (ex: equações matemáticas da reta) e dicionários de parâmetros no MLflow."""
+        """Registra parâmetros do tipo texto (ex: equações matemáticas da reta) como parâmetros e arquivos .txt no MLflow."""
         for chave, valor in metricas.items():
             if isinstance(valor, str):
                 chave_san = _sanitizar_nome(chave)
@@ -169,10 +190,6 @@ class MLflowObservador(IObservadorML):
                         nome_modelo,
                         nome_txt_artifact,
                     )
-            elif chave == "melhores_parametros" and isinstance(valor, dict):
-                for param_k, param_v in valor.items():
-                    param_san = _sanitizar_nome(str(param_k))
-                    mlflow.log_param(f"{prefixo}_best_{param_san}", param_v)
 
     def __registrar_modelo_no_registry(
         self, prefixo: str, metricas: dict[str, object], nome_modelo: str

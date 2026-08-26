@@ -1,7 +1,17 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any, Generic, TypeVar
 
-from sklearn.model_selection import GridSearchCV
+import numpy as np
+import pandas as pd
+from sklearn.base import clone
+from sklearn.model_selection import (
+    GridSearchCV,
+    KFold,
+    cross_val_predict,
+    cross_validate,
+)
+from sklearn.pipeline import Pipeline
 
 X_in = TypeVar("X_in")
 Y_in = TypeVar("Y_in")
@@ -36,36 +46,118 @@ class EstrategiaModelo(ABC, Generic[X_in, Y_in, Y_out]):
         """Avalia o modelo no conjunto de teste e retorna um dicionário com métricas."""
         pass
 
+    @abstractmethod
     def obter_equacoes_por_zona(self) -> dict[str, float]:
         """Retorna interceptos por zona (opcional para modelos lineares)."""
         return {}
 
+    @abstractmethod
     def obter_equacao_reta_geral(self) -> str:
         """Retorna a equação geral da reta (opcional para modelos lineares)."""
         return ""
 
+    @abstractmethod
     def obter_curva_validacao(self, x: X_in, y: Y_in) -> dict[str, object]:
         """Calcula a curva de validação (opcional para modelos que suportam)."""
         return {}
 
+    @abstractmethod
     def gerar_figura_underfit_overfit(self, x: X_in, y: Y_in) -> Any:
         """Gera o objeto plt.Figure da curva de validação (opcional para modelos que suportam)."""
         return None
 
+    @abstractmethod
     def realizar_grid_search(
-        self, x: X_in, y: Y_in
+            self, x: X_in, y: Y_in
     ) -> GridSearchCV:
         """Realiza busca em grade de hiperparâmetros (GridSearchCV)."""
         return GridSearchCV(estimator=None, param_grid={})
 
+    @abstractmethod
     def obter_resultado_grid_search(
-        self, grid_search: GridSearchCV
+            self, grid_search: GridSearchCV
     ) -> dict[str, Any]:
         """Extrai e estrutura os resultados detalhados da busca em grade (GridSearchCV)."""
         return {}
 
     def realizar_validacao_cruzada(
-        self, x: X_in, y: Y_in, iteracao: int = 5
+            self, x: pd.DataFrame, y: pd.Series, iteracao: int = 5
     ) -> dict[str, Any]:
-        """Realiza validação cruzada (opcional para modelos que suportam)."""
-        return {}
+        """Realiza validação cruzada KFold (10-folds) e retorna pontuações e resíduos out-of-fold."""
+        modelo = self.modelo_objeto
+        if modelo is None:
+            return {}
+
+        pipeline = Pipeline([("regressor", modelo)])
+
+        kfold = KFold(n_splits=10, shuffle=True, random_state=iteracao)
+        scoring = ["r2", "neg_mean_squared_error", "neg_mean_absolute_error"]
+
+        scores = cross_validate(
+            pipeline,
+            x,
+            y,
+            cv=kfold,
+            scoring=scoring,
+            n_jobs=4,
+            return_train_score=True,
+            error_score="raise",
+        )
+
+        results_dict = {
+            "test_r2": [round(float(v), 4) for v in scores["test_r2"]],
+            "test_mse": [
+                round(float(-v), 2) for v in scores["test_neg_mean_squared_error"]
+            ],
+            "test_mae": [
+                round(float(-v), 2) for v in scores["test_neg_mean_absolute_error"]
+            ],
+            "train_r2": [round(float(v), 4) for v in scores["train_r2"]],
+            "train_mse": [
+                round(float(-v), 2) for v in scores["train_neg_mean_squared_error"]
+            ],
+            "train_mae": [
+                round(float(-v), 2) for v in scores["train_neg_mean_absolute_error"]
+            ],
+            "fit_time": [round(float(v), 4) for v in scores["fit_time"]],
+            "score_time": [round(float(v), 4) for v in scores["score_time"]],
+        }
+
+        # RMSE por fold
+        results_dict["test_rmse"] = [
+            round(float(np.sqrt(mse)), 2) for mse in results_dict["test_mse"]
+        ]
+        results_dict["train_rmse"] = [
+            round(float(np.sqrt(mse)), 2) for mse in results_dict["train_mse"]
+        ]
+
+        mean_scores = {
+            "mean_test_r2": round(float(np.mean(results_dict["test_r2"])), 4),
+            "mean_test_mse": round(float(np.mean(results_dict["test_mse"])), 2),
+            "mean_test_mae": round(float(np.mean(results_dict["test_mae"])), 2),
+            "mean_test_rmse": round(float(np.mean(results_dict["test_rmse"])), 2),
+            "mean_train_r2": round(float(np.mean(results_dict["train_r2"])), 4),
+            "mean_train_mse": round(float(np.mean(results_dict["train_mse"])), 2),
+            "mean_train_mae": round(float(np.mean(results_dict["train_mae"])), 2),
+            "mean_train_rmse": round(float(np.mean(results_dict["train_rmse"])), 2),
+            "mean_fit_time": round(float(np.mean(results_dict["fit_time"])), 4),
+            "mean_score_time": round(float(np.mean(results_dict["score_time"])), 4),
+        }
+
+        # Predição out-of-fold (resíduos globais)
+        y_pred = cross_val_predict(clone(pipeline), x, y, cv=kfold, n_jobs=-1)
+        residuos_totais = y - y_pred
+
+        rmse_folds = [
+            round(float(np.sqrt(-mse)), 2)
+            for mse in scores["test_neg_mean_squared_error"]
+        ]
+
+        return {
+            "results_dict": results_dict,
+            "mean_scores": mean_scores,
+            "residuos_totais": [round(float(r), 2) for r in residuos_totais],
+            "iteracao": iteracao,
+            "rmse_folds": rmse_folds,
+            "data_coleta": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        }

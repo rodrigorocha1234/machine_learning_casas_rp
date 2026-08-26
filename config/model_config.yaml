@@ -8,14 +8,8 @@ treinamento_simples:
     scoring: "neg_root_mean_squared_error"
     n_jobs: 4
     random_state: 42
+
   arvore_decisao:
-
-turing_parametros:
-  regressao_linear:
-    fit_intercept: [True, False]
-    positive: [True, False]
-
-
 
 carregador_dados:
   colunas:

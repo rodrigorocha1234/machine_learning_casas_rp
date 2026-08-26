@@ -21,7 +21,7 @@ from sklearn.model_selection import (
 )
 from sklearn.pipeline import Pipeline
 
-from src_mh.config import obter_config_regressao_linear
+from src_mh.config.config import Config
 from src_mh.estrategia_modelo.estrategia_modelo import EstrategiaModelo
 
 
@@ -29,21 +29,28 @@ class RegressaoLinearEstrategia(
     EstrategiaModelo[pd.DataFrame, pd.Series, np.ndarray]
 ):
 
-    def __init__(self, fit_intercept: bool | None = None):
-        cfg = obter_config_regressao_linear()
-        self.__cfg = cfg
-        intercept_flag = (
-            fit_intercept
-            if fit_intercept is not None
-            else bool(cfg.get("fit_intercept", True))
-        )
-        self.__modelo = LinearRegression(fit_intercept=intercept_flag)
-        self.__colunas: list[str] = []
+    def __init__(self, params: dict):
 
-        start = float(cfg.get("param_range_start", -3))
-        end = float(cfg.get("param_range_end", 2))
-        num = int(cfg.get("param_range_num", 10))
+        self.__params = params
+        self.__modelo = LinearRegression(**params)
+        self.__colunas: list[str] = []
+        self.__params_turing = {
+            'regressor__fit_intercept': Config.fit_intercept_turing_rl,
+            'regressor__positive': Config.positive_turing_rl
+        }
+
+        start = Config.param_range_start_rl
+        end = Config.param_range_end_rl
+        num = Config.param_range_num_rl
         self.__param_range = np.logspace(start, end, num)
+        self.__regressor = Pipeline(
+        [
+            (
+                "regressor",
+                LinearRegression()
+            )
+        ]
+    )
 
     @property
     @override
@@ -94,7 +101,7 @@ class RegressaoLinearEstrategia(
 
     @override
     def obter_curva_validacao(
-        self, x: pd.DataFrame, y: pd.Series
+            self, x: pd.DataFrame, y: pd.Series
     ) -> dict[str, object]:
         """Calcula as pontuações da curva de validação (validation_curve)."""
         train_scores, test_scores = validation_curve(
@@ -125,7 +132,7 @@ class RegressaoLinearEstrategia(
 
     @override
     def gerar_figura_underfit_overfit(
-        self, x: pd.DataFrame, y: pd.Series
+            self, x: pd.DataFrame, y: pd.Series
     ) -> plt.Figure:
         """Gera a figura Matplotlib destacando visualmente as regiões de Bias vs Variance (Overfitting / Underfitting)."""
         dados_curva = self.obter_curva_validacao(x, y)
@@ -208,25 +215,18 @@ class RegressaoLinearEstrategia(
 
     @override
     def realizar_grid_search(
-        self, x: pd.DataFrame, y: pd.Series
+            self, x: pd.DataFrame, y: pd.Series
     ) -> GridSearchCV:
         """Executa busca em grade de hiperparâmetros (GridSearchCV) utilizando as configurações do YAML/Config."""
         pipeline = Pipeline([("regressor", Ridge(fit_intercept=self.__modelo.fit_intercept))])
 
-        param_grid = self.__cfg.get("param_grid")
-        if not param_grid:
-            param_grid = {"regressor__alpha": self.__param_range.tolist()}
-
-        cv = int(self.__cfg.get("cv_folds", 5))
-        scoring = str(self.__cfg.get("scoring", "neg_root_mean_squared_error"))
-        n_jobs = int(self.__cfg.get("n_jobs", 4))
 
         grid_search = GridSearchCV(
             estimator=pipeline,
-            param_grid=param_grid,
-            scoring=scoring,
-            cv=cv,
-            n_jobs=n_jobs,
+            param_grid=self.__params_turing,
+            scoring='neg_root_mean_squared_error',
+            cv=5,
+            n_jobs=4,
             verbose=1,
             return_train_score=True,
         )
@@ -236,7 +236,7 @@ class RegressaoLinearEstrategia(
 
     @override
     def obter_resultado_grid_search(
-        self, grid_search: GridSearchCV
+            self, grid_search: GridSearchCV
     ) -> dict[str, Any]:
         """Extrai e estrutura os resultados detalhados da busca em grade (GridSearchCV)."""
         if not hasattr(grid_search, "best_params_"):
@@ -260,7 +260,7 @@ class RegressaoLinearEstrategia(
 
     @override
     def obter_resultados(
-        self, x_test: pd.DataFrame, y_test: pd.Series
+            self, x_test: pd.DataFrame, y_test: pd.Series
     ) -> dict[str, object]:
         y_pred = self.predizer(x_test)
         y_test_arr = np.asarray(y_test, dtype=float)
@@ -306,81 +306,3 @@ class RegressaoLinearEstrategia(
             "coeficientes": coeficientes_dict,
         }
 
-    @override
-    def realizar_validacao_cruzada(
-        self, x: pd.DataFrame, y: pd.Series, iteracao: int = 5
-    ) -> dict[str, Any]:
-        """Realiza validação cruzada KFold (10-folds) e retorna pontuações e resíduos out-of-fold."""
-        pipeline = Pipeline([("regressor", self.__modelo)])
-
-        kfold = KFold(n_splits=10, shuffle=True, random_state=iteracao)
-        scoring = ["r2", "neg_mean_squared_error", "neg_mean_absolute_error"]
-
-        scores = cross_validate(
-            pipeline,
-            x,
-            y,
-            cv=kfold,
-            scoring=scoring,
-            n_jobs=4,
-            return_train_score=True,
-            error_score="raise",
-        )
-
-        results_dict = {
-            "test_r2": [round(float(v), 4) for v in scores["test_r2"]],
-            "test_mse": [
-                round(float(-v), 2) for v in scores["test_neg_mean_squared_error"]
-            ],
-            "test_mae": [
-                round(float(-v), 2) for v in scores["test_neg_mean_absolute_error"]
-            ],
-            "train_r2": [round(float(v), 4) for v in scores["train_r2"]],
-            "train_mse": [
-                round(float(-v), 2) for v in scores["train_neg_mean_squared_error"]
-            ],
-            "train_mae": [
-                round(float(-v), 2) for v in scores["train_neg_mean_absolute_error"]
-            ],
-            "fit_time": [round(float(v), 4) for v in scores["fit_time"]],
-            "score_time": [round(float(v), 4) for v in scores["score_time"]],
-        }
-
-        # RMSE por fold
-        results_dict["test_rmse"] = [
-            round(float(np.sqrt(mse)), 2) for mse in results_dict["test_mse"]
-        ]
-        results_dict["train_rmse"] = [
-            round(float(np.sqrt(mse)), 2) for mse in results_dict["train_mse"]
-        ]
-
-        mean_scores = {
-            "mean_test_r2": round(float(np.mean(results_dict["test_r2"])), 4),
-            "mean_test_mse": round(float(np.mean(results_dict["test_mse"])), 2),
-            "mean_test_mae": round(float(np.mean(results_dict["test_mae"])), 2),
-            "mean_test_rmse": round(float(np.mean(results_dict["test_rmse"])), 2),
-            "mean_train_r2": round(float(np.mean(results_dict["train_r2"])), 4),
-            "mean_train_mse": round(float(np.mean(results_dict["train_mse"])), 2),
-            "mean_train_mae": round(float(np.mean(results_dict["train_mae"])), 2),
-            "mean_train_rmse": round(float(np.mean(results_dict["train_rmse"])), 2),
-            "mean_fit_time": round(float(np.mean(results_dict["fit_time"])), 4),
-            "mean_score_time": round(float(np.mean(results_dict["score_time"])), 4),
-        }
-
-        # Predição out-of-fold (resíduos globais)
-        y_pred = cross_val_predict(clone(pipeline), x, y, cv=kfold, n_jobs=-1)
-        residuos_totais = y - y_pred
-
-        rmse_folds = [
-            round(float(np.sqrt(-mse)), 2)
-            for mse in scores["test_neg_mean_squared_error"]
-        ]
-
-        return {
-            "results_dict": results_dict,
-            "mean_scores": mean_scores,
-            "residuos_totais": [round(float(r), 2) for r in residuos_totais],
-            "iteracao": iteracao,
-            "rmse_folds": rmse_folds,
-            "data_coleta": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        }
