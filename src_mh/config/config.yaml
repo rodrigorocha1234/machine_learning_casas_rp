@@ -10,11 +10,16 @@ treinamento_simples:
     random_state: 42
   arvore_decisao:
 
+
 turing_parametros:
   regressao_linear:
     fit_intercept: [True, False]
     positive: [True, False]
 
+validacao_cruzada:
+  regressao_linear:
+    fit_intercept: True
+    positive: True
 
 
 carregador_dados:

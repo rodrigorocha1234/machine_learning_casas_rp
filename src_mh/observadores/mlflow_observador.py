@@ -26,10 +26,18 @@ def _extrair_metricas_planas(
 ) -> dict[str, float]:
     """Extrai recursivamente métricas numéricas em um dicionário plano para envio em lote (batch)."""
     metricas_planas: dict[str, float] = {}
-    chaves_ignoradas = {"modelo_objeto", "x_sample", "y_sample"}
+    chaves_ignoradas = {
+        "modelo_objeto",
+        "x_sample",
+        "y_sample",
+        "residuos_totais",
+        "rmse_folds",
+        "data_coleta",
+        "melhores_parametros",
+    }
 
     for chave, valor in dados.items():
-        # Ignora objetos de figura, amostragem ou modelo na extração de métricas numéricas
+        # Ignora objetos de figura, amostragem, listas ou modelo na extração de métricas numéricas
         if isinstance(valor, plt.Figure) or chave in chaves_ignoradas:
             continue
 
@@ -73,8 +81,8 @@ class MLflowObservador(IObservadorML):
             if exp and exp.lifecycle_stage == "deleted":
                 self.__nome_experimento = f"{self.__nome_experimento}_V2"
 
-            mlflow.set_experiment(self.__nome_experimento)
-            mlflow.start_run(run_name=nome_experimento)
+            nested = mlflow.active_run() is not None
+            mlflow.start_run(run_name=nome_experimento, nested=nested)
 
             params_filtrados: dict[str, Any] = {
                 _sanitizar_nome(k): v
@@ -85,8 +93,9 @@ class MLflowObservador(IObservadorML):
                 mlflow.log_params(params_filtrados)
 
             logger.info(
-                "Conectado ao MLflow Server (%s) - Run iniciada: '%s'",
+                "Conectado ao MLflow Server (%s) - Run %siniciada: '%s'",
                 self.__tracking_uri,
+                "nested " if nested else "",
                 nome_experimento,
             )
         except Exception as e:
@@ -149,11 +158,17 @@ class MLflowObservador(IObservadorML):
         """Extrai e registra todas as métricas numéricas de forma otimizada em uma única requisição HTTP (batch)."""
         metricas_batch = _extrair_metricas_planas(prefixo, metricas)
         if metricas_batch:
-            mlflow.log_metrics(metricas_batch)
+            step = (
+                int(metricas["iteracao"])
+                if "iteracao" in metricas and isinstance(metricas["iteracao"], (int, float))
+                else None
+            )
+            mlflow.log_metrics(metricas_batch, step=step)
             logger.info(
-                "Métricas do modelo '%s' (%d métricas) registradas em lote (batch) no MLflow.",
+                "Métricas do modelo '%s' (%d métricas%s) registradas em lote (batch) no MLflow.",
                 nome_modelo,
                 len(metricas_batch),
+                f", iteração step={step}" if step is not None else "",
             )
 
     def __logar_figuras_matplotlib(

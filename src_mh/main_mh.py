@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Generic, Sequence, TypeVar
 
+import numpy as np
 import pandas as pd
 
 from src_mh.carregador_dados.carregar_dados_xlsx import CarregarDadosXLSX
@@ -168,9 +169,106 @@ class PipelineML(Generic[T, X, Y]):
         # Notifica conclusão do experimento
         self.__notificar_fim_experimento()
 
-    def realizar_turing_parametros(self) -> None:
-        """Alias para realizar_tuning_parametros (manutenção da compatibilidade)."""
-        self.realizar_tuning_parametros()
+
+    def realizar_validacao_cruzada(self, num_iteracoes: int = 30) -> None:
+        """Executa validação cruzada repetida (30 iterações por padrão) e registra cada iteração como uma Run individual no MLflow."""
+        x_train, x_test, y_train, y_test = self.rodar_preparacao_dados()
+        x_completo = pd.concat([x_train, x_test], axis=0)
+        y_completo = pd.concat([y_train, y_test], axis=0)
+
+        logger.info(
+            "INICIANDO VALIDAÇÃO CRUZADA REPETIDA (%d ITERAÇÕES) NO PIPELINE ML",
+            num_iteracoes,
+        )
+
+        # Inicia a Run pai no MLflow para agrupar todas as iterações da validação cruzada
+        self.__notificar_inicio_experimento(
+            f"Validacao_Cruzada_Repetida_{num_iteracoes}_Runs",
+            {
+                "n_amostras_totais": len(x_completo),
+                "num_iteracoes": num_iteracoes,
+                "n_modelos": len(self.__modelos),
+            },
+        )
+
+        for modelo in self.__modelos:
+            logger.info(
+                "Executando Validação Cruzada para %s (%d repetições)",
+                modelo.nome,
+                num_iteracoes,
+            )
+
+            historico_iteracoes: list[dict[str, Any]] = []
+
+            for i in range(num_iteracoes):
+                # 1. Inicia uma Run dedicada (Nested Run) para a iteração i no MLflow
+                nome_run_iteracao = f"{modelo.nome}_Iteracao_{i + 1}"
+                self.__notificar_inicio_experimento(
+                    nome_run_iteracao,
+                    {
+                        "modelo": modelo.nome,
+                        "iteracao": i + 1,
+                        "random_state_kfold": i,
+                    },
+                )
+
+                # 2. Executa a validação cruzada para a iteração i
+                resultado_cv = modelo.realizar_validacao_cruzada(
+                    x_completo, y_completo, iteracao=i
+                )
+                historico_iteracoes.append(resultado_cv)
+
+                # 3. Notifica os observadores (MLflow grava os resultados na Run da iteração i)
+                self.__notificar_metricas(modelo.nome, resultado_cv)
+
+                # 4. Finaliza a Run da iteração atual no MLflow
+                self.__notificar_fim_experimento()
+
+            # Extração e resumo das métricas globais acumuladas das 30 iterações
+            r2_scores = [
+                res["mean_scores"]["mean_test_r2"]
+                for res in historico_iteracoes
+                if "mean_scores" in res
+            ]
+            rmse_scores = [
+                res["mean_scores"]["mean_test_rmse"]
+                for res in historico_iteracoes
+                if "mean_scores" in res
+            ]
+            mae_scores = [
+                res["mean_scores"]["mean_test_mae"]
+                for res in historico_iteracoes
+                if "mean_scores" in res
+            ]
+
+            if r2_scores and rmse_scores:
+                metricas_globais: dict[str, object] = {
+                    "cv_30_runs_mean_r2": round(float(np.mean(r2_scores)), 4),
+                    "cv_30_runs_std_r2": round(float(np.std(r2_scores)), 4),
+                    "cv_30_runs_mean_rmse": round(float(np.mean(rmse_scores)), 2),
+                    "cv_30_runs_std_rmse": round(float(np.std(rmse_scores)), 2),
+                    "cv_30_runs_mean_mae": round(float(np.mean(mae_scores)), 2),
+                    "cv_30_runs_std_mae": round(float(np.std(mae_scores)), 2),
+                }
+
+                if modelo.modelo_objeto is not None:
+                    metricas_globais["modelo_objeto"] = modelo.modelo_objeto
+                    x_sample = x_test.head(5)
+                    metricas_globais["x_sample"] = x_sample
+                    metricas_globais["y_sample"] = modelo.predizer(x_sample)
+
+                # Inicia uma Run dedicada para o resumo global no MLflow
+                self.__notificar_inicio_experimento(
+                    f"{modelo.nome}_Resumo_Global_{num_iteracoes}_Runs",
+                    {"num_iteracoes": num_iteracoes},
+                )
+                self.__notificar_metricas(
+                    f"{modelo.nome}_Resumo_Global", metricas_globais
+                )
+                self.__notificar_fim_experimento()
+
+        # Encerra a Run pai no MLflow
+        self.__notificar_fim_experimento()
 
 
 
@@ -216,4 +314,15 @@ if __name__ == "__main__":
         observadores=[console_obs, mlflow_obs],  # Registro dos observadores
     )
 
-    pml.rodar_treinamento_simples()
+    pmlvl = PipelineML[pd.DataFrame, pd.DataFrame, pd.Series](
+        carregar_dados=carregar_dados,
+        prepara_dados=prepara_dados,
+        modelos=[RegressaoLinearEstrategia(params={
+            'fit_intercept': Config.fit_intercept_rl_vl,
+            'positive': Config.positive_rl_vl,
+        })],
+        observadores=[console_obs, mlflow_obs],  # Registro dos observadores
+    )
+
+
+    pmlvl.realizar_validacao_cruzada()

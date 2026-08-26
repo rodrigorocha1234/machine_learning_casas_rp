@@ -33,4 +33,8 @@ class Config:
         fit_intercept_turing_rl = turing_parametros_rl['fit_intercept']
         positive_turing_rl = turing_parametros_rl['positive']
 
+        validacao_cruzada = config['validacao_cruzada']
+        fit_intercept_rl_vl = validacao_cruzada['regressao_linear']['fit_intercept']
+        positive_rl_vl = validacao_cruzada['regressao_linear']['positive']
+
 

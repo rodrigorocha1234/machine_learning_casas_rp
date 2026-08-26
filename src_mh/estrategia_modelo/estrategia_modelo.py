@@ -80,15 +80,16 @@ class EstrategiaModelo(ABC, Generic[X_in, Y_in, Y_out]):
         """Extrai e estrutura os resultados detalhados da busca em grade (GridSearchCV)."""
         return {}
 
+
     def realizar_validacao_cruzada(
             self, x: pd.DataFrame, y: pd.Series, iteracao: int = 5
     ) -> dict[str, Any]:
         """Realiza validação cruzada KFold (10-folds) e retorna pontuações e resíduos out-of-fold."""
-        modelo = self.modelo_objeto
-        if modelo is None:
-            return {}
+        modelo_est = self.modelo_objeto
+        if modelo_est is None:
+            raise ValueError(f"O modelo '{self.nome}' não possui um estimador válido em modelo_objeto.")
 
-        pipeline = Pipeline([("regressor", modelo)])
+        pipeline = Pipeline([("regressor", modelo_est)])
 
         kfold = KFold(n_splits=10, shuffle=True, random_state=iteracao)
         scoring = ["r2", "neg_mean_squared_error", "neg_mean_absolute_error"]
