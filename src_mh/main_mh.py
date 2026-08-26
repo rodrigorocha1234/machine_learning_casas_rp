@@ -29,11 +29,11 @@ Y = TypeVar("Y", bound=pd.Series)
 class PipelineML(Generic[T, X, Y]):
 
     def __init__(
-        self,
-        carregar_dados: ICarregarDados[T],
-        prepara_dados: IPrepararDados[T, X, Y],
-        modelos: Sequence[EstrategiaModelo[X, Y, Any]],
-        observadores: list[IObservadorML] | None = None,
+            self,
+            carregar_dados: ICarregarDados[T],
+            prepara_dados: IPrepararDados[T, X, Y],
+            modelos: Sequence[EstrategiaModelo[X, Y, Any]],
+            observadores: list[IObservadorML] | None = None,
     ):
         self.__carregar_dados = carregar_dados
         self.__prepara_dados = prepara_dados
@@ -45,13 +45,13 @@ class PipelineML(Generic[T, X, Y]):
         self.__observadores.append(observador)
 
     def __notificar_inicio_experimento(
-        self, nome_experimento: str, parametros: dict[str, object]
+            self, nome_experimento: str, parametros: dict[str, object]
     ) -> None:
         for obs in self.__observadores:
             obs.iniciar_experimento(nome_experimento, parametros)
 
     def __notificar_metricas(
-        self, nome_modelo: str, metricas: dict[str, object]
+            self, nome_modelo: str, metricas: dict[str, object]
     ) -> None:
         for obs in self.__observadores:
             obs.registrar_metricas(nome_modelo, metricas)
@@ -169,7 +169,6 @@ class PipelineML(Generic[T, X, Y]):
         # Notifica conclusão do experimento
         self.__notificar_fim_experimento()
 
-
     def realizar_validacao_cruzada(self, num_iteracoes: int = 30) -> None:
         """Executa validação cruzada repetida (30 iterações por padrão) e registra cada iteração como uma Run individual no MLflow."""
         x_train, x_test, y_train, y_test = self.rodar_preparacao_dados()
@@ -224,7 +223,7 @@ class PipelineML(Generic[T, X, Y]):
                 # 4. Finaliza a Run da iteração atual no MLflow
                 self.__notificar_fim_experimento()
 
-            # Extração e resumo das métricas globais acumuladas das 30 iterações
+            # Extração de métricas acumuladas das 30 iterações (para testes estatísticos de Friedman e Nemenyi)
             r2_scores = [
                 res["mean_scores"]["mean_test_r2"]
                 for res in historico_iteracoes
@@ -241,6 +240,22 @@ class PipelineML(Generic[T, X, Y]):
                 if "mean_scores" in res
             ]
 
+            oof_r2_scores = [
+                res["mean_scores"]["oof_completo_r2"]
+                for res in historico_iteracoes
+                if "mean_scores" in res and "oof_completo_r2" in res["mean_scores"]
+            ]
+            oof_rmse_scores = [
+                res["mean_scores"]["oof_completo_rmse"]
+                for res in historico_iteracoes
+                if "mean_scores" in res and "oof_completo_rmse" in res["mean_scores"]
+            ]
+            oof_mae_scores = [
+                res["mean_scores"]["oof_completo_mae"]
+                for res in historico_iteracoes
+                if "mean_scores" in res and "oof_completo_mae" in res["mean_scores"]
+            ]
+
             if r2_scores and rmse_scores:
                 metricas_globais: dict[str, object] = {
                     "cv_30_runs_mean_r2": round(float(np.mean(r2_scores)), 4),
@@ -249,13 +264,35 @@ class PipelineML(Generic[T, X, Y]):
                     "cv_30_runs_std_rmse": round(float(np.std(rmse_scores)), 2),
                     "cv_30_runs_mean_mae": round(float(np.mean(mae_scores)), 2),
                     "cv_30_runs_std_mae": round(float(np.std(mae_scores)), 2),
+                    "oof_completo_30_runs_mean_r2": round(float(np.mean(oof_r2_scores)), 4) if oof_r2_scores else 0.0,
+                    "oof_completo_30_runs_std_r2": round(float(np.std(oof_r2_scores)), 4) if oof_r2_scores else 0.0,
+                    "oof_completo_30_runs_mean_rmse": round(float(np.mean(oof_rmse_scores)),
+                                                            2) if oof_rmse_scores else 0.0,
+                    "oof_completo_30_runs_std_rmse": round(float(np.std(oof_rmse_scores)),
+                                                           2) if oof_rmse_scores else 0.0,
+                    "oof_completo_30_runs_mean_mae": round(float(np.mean(oof_mae_scores)),
+                                                           2) if oof_mae_scores else 0.0,
+                    "oof_completo_30_runs_std_mae": round(float(np.std(oof_mae_scores)), 2) if oof_mae_scores else 0.0,
+                    # Vetores de 30 iterações para os testes de Friedman e Nemenyi
+                    "scores_por_iteracao_rmse": rmse_scores,
+                    "scores_por_iteracao_r2": r2_scores,
+                    "scores_por_iteracao_mae": mae_scores,
+                    "oof_scores_por_iteracao_rmse": oof_rmse_scores,
+                    "oof_scores_por_iteracao_r2": oof_r2_scores,
+                    "oof_scores_por_iteracao_mae": oof_mae_scores,
                 }
 
                 if modelo.modelo_objeto is not None:
-                    metricas_globais["modelo_objeto"] = modelo.modelo_objeto
                     x_sample = x_test.head(5)
+                    try:
+                        y_sample = modelo.predizer(x_sample)
+                    except Exception:
+                        modelo.treinar(x_completo, y_completo)
+                        y_sample = modelo.predizer(x_sample)
+
+                    metricas_globais["modelo_objeto"] = modelo.modelo_objeto
                     metricas_globais["x_sample"] = x_sample
-                    metricas_globais["y_sample"] = modelo.predizer(x_sample)
+                    metricas_globais["y_sample"] = y_sample
 
                 # Inicia uma Run dedicada para o resumo global no MLflow
                 self.__notificar_inicio_experimento(
@@ -271,23 +308,16 @@ class PipelineML(Generic[T, X, Y]):
         self.__notificar_fim_experimento()
 
 
-
-
-
-
 if __name__ == "__main__":
-
-
-
     carregar_dados = CarregarDadosXLSX(
-        colunas= [
-                "Metragem",
-                "Quartos",
-                "Banheiros",
-                "Vagas",
-                "Bairro",
-                "Valor_da_Venda",
-            ]
+        colunas=[
+            "Metragem",
+            "Quartos",
+            "Banheiros",
+            "Vagas",
+            "Bairro",
+            "Valor_da_Venda",
+        ]
     )
 
     prepara_dados: IPrepararDados[
@@ -296,7 +326,7 @@ if __name__ == "__main__":
 
     # Instancia os modelos lendo as configurações centralizadas de model_config.yaml
     modelo_regressao_linear = RegressaoLinearEstrategia(params={
-        'fit_intercept' : Config.fit_intercept_rl
+        'fit_intercept': Config.fit_intercept_rl
     })
 
     # Instanciando observadores (MLflow + Console) com suporte ao Model Registry centralizado
@@ -313,6 +343,7 @@ if __name__ == "__main__":
         modelos=[modelo_regressao_linear],
         observadores=[console_obs, mlflow_obs],  # Registro dos observadores
     )
+    # pml.realizar_tuning_parametros()
 
     pmlvl = PipelineML[pd.DataFrame, pd.DataFrame, pd.Series](
         carregar_dados=carregar_dados,

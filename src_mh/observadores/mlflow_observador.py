@@ -34,6 +34,12 @@ def _extrair_metricas_planas(
         "rmse_folds",
         "data_coleta",
         "melhores_parametros",
+        "scores_por_iteracao_rmse",
+        "scores_por_iteracao_r2",
+        "scores_por_iteracao_mae",
+        "oof_scores_por_iteracao_rmse",
+        "oof_scores_por_iteracao_r2",
+        "oof_scores_por_iteracao_mae",
     }
 
     for chave, valor in dados.items():
@@ -128,10 +134,49 @@ class MLflowObservador(IObservadorML):
                 # 5. Registra o estimador treinado com Assinatura (Schema Inputs & Outputs) no Model Registry
                 self.__registrar_modelo_no_registry(prefixo, metricas, nome_modelo)
 
+                # 6. Registra os vetores das 30 iterações diretamente no MLflow (métricas com step, parâmetros e resumo de texto)
+                self.__logar_vetores_iteracoes_no_mlflow(prefixo, metricas, nome_modelo)
+
         except Exception as e:
             logger.warning(
                 "⚠️ [MLflowObservador] Aviso ao processar eventos no MLflow: %s",
                 e,
+            )
+
+    def __logar_vetores_iteracoes_no_mlflow(
+        self, prefixo: str, metricas: dict[str, object], nome_modelo: str
+    ) -> None:
+        """Registra os vetores das 30 iterações diretamente como Métricas (com step=i) e Parâmetros na interface do MLflow."""
+        chaves_vetores = [
+            "scores_por_iteracao_rmse",
+            "scores_por_iteracao_r2",
+            "scores_por_iteracao_mae",
+            "oof_scores_por_iteracao_rmse",
+            "oof_scores_por_iteracao_r2",
+            "oof_scores_por_iteracao_mae",
+        ]
+
+        vetor_encontrado = False
+
+        for chave in chaves_vetores:
+            vetor = metricas.get(chave)
+            if isinstance(vetor, list) and vetor:
+                vetor_encontrado = True
+                nome_metrica = f"{prefixo}_{_sanitizar_nome(chave)}"
+
+                # 1. Loga cada valor como métrica no MLflow com step=1..30 para gráfico na UI
+                for idx, valor in enumerate(vetor):
+                    if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+                        mlflow.log_metric(nome_metrica, float(valor), step=idx + 1)
+
+                # 2. Loga a lista como parâmetro para exibição direta no painel de Parâmetros do MLflow
+                nome_param = f"vetor_{_sanitizar_nome(chave)}"
+                mlflow.log_param(nome_param, str(vetor))
+
+        if vetor_encontrado:
+            logger.info(
+                "Vetores das 30 iterações para '%s' registrados diretamente nas métricas e parâmetros do MLflow.",
+                nome_modelo,
             )
 
     def __logar_parametros_tuning(

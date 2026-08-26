@@ -5,6 +5,7 @@ from typing import Any, Generic, TypeVar
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import (
     GridSearchCV,
     KFold,
@@ -80,7 +81,6 @@ class EstrategiaModelo(ABC, Generic[X_in, Y_in, Y_out]):
         """Extrai e estrutura os resultados detalhados da busca em grade (GridSearchCV)."""
         return {}
 
-
     def realizar_validacao_cruzada(
             self, x: pd.DataFrame, y: pd.Series, iteracao: int = 5
     ) -> dict[str, Any]:
@@ -132,6 +132,14 @@ class EstrategiaModelo(ABC, Generic[X_in, Y_in, Y_out]):
             round(float(np.sqrt(mse)), 2) for mse in results_dict["train_mse"]
         ]
 
+        # Predição out-of-fold (resíduos globais e métricas no conjunto completo)
+        y_pred = cross_val_predict(clone(pipeline), x, y, cv=kfold, n_jobs=-1)
+        residuos_totais = y - y_pred
+
+        oof_r2 = round(float(r2_score(y, y_pred)), 4)
+        oof_rmse = round(float(np.sqrt(mean_squared_error(y, y_pred))), 2)
+        oof_mae = round(float(mean_absolute_error(y, y_pred)), 2)
+
         mean_scores = {
             "mean_test_r2": round(float(np.mean(results_dict["test_r2"])), 4),
             "mean_test_mse": round(float(np.mean(results_dict["test_mse"])), 2),
@@ -143,16 +151,20 @@ class EstrategiaModelo(ABC, Generic[X_in, Y_in, Y_out]):
             "mean_train_rmse": round(float(np.mean(results_dict["train_rmse"])), 2),
             "mean_fit_time": round(float(np.mean(results_dict["fit_time"])), 4),
             "mean_score_time": round(float(np.mean(results_dict["score_time"])), 4),
+            "oof_completo_r2": oof_r2,
+            "oof_completo_rmse": oof_rmse,
+            "oof_completo_mae": oof_mae,
         }
-
-        # Predição out-of-fold (resíduos globais)
-        y_pred = cross_val_predict(clone(pipeline), x, y, cv=kfold, n_jobs=-1)
-        residuos_totais = y - y_pred
 
         rmse_folds = [
             round(float(np.sqrt(-mse)), 2)
             for mse in scores["test_neg_mean_squared_error"]
         ]
+
+        # Ajusta o modelo final da iteração e extrai amostra para registro do modelo no MLflow
+        pipeline_fitted = clone(pipeline).fit(x, y)
+        x_sample = x.head(5)
+        y_sample = pipeline_fitted.predict(x_sample)
 
         return {
             "results_dict": results_dict,
@@ -161,4 +173,7 @@ class EstrategiaModelo(ABC, Generic[X_in, Y_in, Y_out]):
             "iteracao": iteracao,
             "rmse_folds": rmse_folds,
             "data_coleta": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            "modelo_objeto": pipeline_fitted,
+            "x_sample": x_sample,
+            "y_sample": y_sample,
         }
