@@ -83,6 +83,23 @@ class Config:
         l1_ratio_elasticnet_vl = validacao_cruzada_en.get('l1_ratio', 0.5)
         fit_intercept_elasticnet_vl = validacao_cruzada_en.get('fit_intercept', True)
 
+        # Árvore de Decisão - Treinamento Simples, Tuning e Validação Cruzada
+        treinamento_simples_dt = config.get('treinamento_simples', {}).get('arvore_decisao', {})
+        max_depth_dt = treinamento_simples_dt.get('max_depth', 6)
+        min_samples_split_dt = treinamento_simples_dt.get('min_samples_split', 5)
+        min_samples_leaf_dt = treinamento_simples_dt.get('min_samples_leaf', 2)
+        r_state_dt = treinamento_simples_dt.get('random_state', 42)
+
+        turing_parametros_dt = config.get('turing_parametros', {}).get('arvore_decisao', {})
+        max_depth_turing_dt = turing_parametros_dt.get('max_depth', [3, 5, 7, 10, None])
+        min_samples_split_turing_dt = turing_parametros_dt.get('min_samples_split', [2, 5, 10])
+        min_samples_leaf_turing_dt = turing_parametros_dt.get('min_samples_leaf', [1, 2, 4])
+
+        validacao_cruzada_dt = config.get('validacao_cruzada', {}).get('arvore_decisao', {})
+        max_depth_dt_vl = validacao_cruzada_dt.get('max_depth', 6)
+        min_samples_split_dt_vl = validacao_cruzada_dt.get('min_samples_split', 5)
+        min_samples_leaf_dt_vl = validacao_cruzada_dt.get('min_samples_leaf', 2)
+
         # Regressão Polinomial - Treinamento Simples
         treinamento_simples_rp = config.get('treinamento_simples', {}).get('regressao_polinomial', {})
         degree_rp = treinamento_simples_rp.get('degree', 2)

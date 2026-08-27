@@ -13,6 +13,7 @@ from src_mh.estrategia_modelo.regressao_polinomial import RegressaoPolinomialEst
 from src_mh.estrategia_modelo.regressao_ridge import RegressaoRidgeEstrategia
 from src_mh.estrategia_modelo.regressao_lasso import RegressaoLassoEstrategia
 from src_mh.estrategia_modelo.regressao_elasticnet import RegressaoElasticNetEstrategia
+from src_mh.estrategia_modelo.arvore_decisao import ArvoreDecisaoEstrategia
 from src_mh.observadores.console_observador import ConsoleObservador
 from src_mh.observadores.iobservador_ml import IObservadorML
 from src_mh.observadores.mlflow_observador import MLflowObservador
@@ -348,6 +349,12 @@ if __name__ == "__main__":
         'fit_intercept': Config.fit_intercept_elasticnet,
         'max_iter': Config.max_iter_elasticnet,
     })
+    modelo_arvore_decisao = ArvoreDecisaoEstrategia(params={
+        'max_depth': Config.max_depth_dt,
+        'min_samples_split': Config.min_samples_split_dt,
+        'min_samples_leaf': Config.min_samples_leaf_dt,
+        'random_state': Config.r_state_dt,
+    })
     modelo_regressao_polinomial = RegressaoPolinomialEstrategia(params={
         'degree': Config.degree_rp,
         'include_bias': Config.include_bias_rp,
@@ -370,6 +377,7 @@ if __name__ == "__main__":
             modelo_regressao_ridge,
             modelo_regressao_lasso,
             modelo_regressao_elasticnet,
+            modelo_arvore_decisao,
             modelo_regressao_polinomial
         ],
         observadores=[console_obs, mlflow_obs],

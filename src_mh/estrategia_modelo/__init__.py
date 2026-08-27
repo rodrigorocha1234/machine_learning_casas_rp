@@ -1,3 +1,4 @@
+from src_mh.estrategia_modelo.arvore_decisao import ArvoreDecisaoEstrategia
 from src_mh.estrategia_modelo.estrategia_modelo import EstrategiaModelo
 from src_mh.estrategia_modelo.regressao_elasticnet import RegressaoElasticNetEstrategia
 from src_mh.estrategia_modelo.regressao_lasso import RegressaoLassoEstrategia
@@ -11,5 +12,6 @@ __all__ = [
     "RegressaoRidgeEstrategia",
     "RegressaoLassoEstrategia",
     "RegressaoElasticNetEstrategia",
+    "ArvoreDecisaoEstrategia",
     "RegressaoPolinomialEstrategia",
 ]
