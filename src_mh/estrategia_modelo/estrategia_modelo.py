@@ -63,7 +63,7 @@ class EstrategiaModelo(ABC, Generic[X_in, Y_in, Y_out]):
         return {}
 
     @abstractmethod
-    def gerar_figura_underfit_overfit(self, x: X_in, y: Y_in) -> Any:
+    def gerar_figura_underfit_overfit(self, dados: dict[str, Any]) -> Any:
         """Gera o objeto plt.Figure da curva de validação (opcional para modelos que suportam)."""
         return None
 

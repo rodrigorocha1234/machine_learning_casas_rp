@@ -12,39 +12,26 @@ from src_mh.observadores.iobservador_ml import IObservadorML
 
 logger = logging.getLogger(__name__)
 
-# Precompilação do Regex para máxima performance na sanitização de nomes
-_REGEX_CARACTERES_INVALIDOS = re.compile(r"[^a-zA-Z0-9_\-\.\:\/ ]")
-
 
 def _sanitizar_nome(nome: str) -> str:
-    """Substitui caracteres inválidos por '_' para atender às exigências de nomes do MLflow."""
-    return _REGEX_CARACTERES_INVALIDOS.sub("_", nome)
+    """Remove caracteres especiais de nomes para chaves de métricas e parâmetros do MLflow."""
+    nome_sanitizado = re.sub(r"[^\w\s-]", "", nome).strip()
+    return re.sub(r"[-\s]+", "_", nome_sanitizado)
 
 
-def _extrair_metricas_planas(
-    prefixo: str, dados: dict[str, Any]
-) -> dict[str, float]:
-    """Extrai recursivamente métricas numéricas em um dicionário plano para envio em lote (batch)."""
+def _extrair_metricas_num_planas(prefixo: str, dados: dict) -> dict[str, float]:
+    """Filtra e extrai exclusivamente valores numéricos escalares para o mlflow.log_metrics."""
     metricas_planas: dict[str, float] = {}
     chaves_ignoradas = {
-        "modelo_objeto",
-        "x_sample",
-        "y_sample",
-        "residuos_totais",
-        "rmse_folds",
-        "data_coleta",
-        "melhores_parametros",
-        "scores_por_iteracao_rmse",
-        "scores_por_iteracao_r2",
-        "scores_por_iteracao_mae",
-        "oof_scores_por_iteracao_rmse",
-        "oof_scores_por_iteracao_r2",
-        "oof_scores_por_iteracao_mae",
+        "modelo_objeto", "x_sample", "y_sample", "figura_underfit",
+        "figura_underfit_overfit", "scores_por_iteracao_rmse",
+        "scores_por_iteracao_r2", "scores_por_iteracao_mae",
+        "oof_scores_por_iteracao_rmse", "oof_scores_por_iteracao_r2",
+        "oof_scores_por_iteracao_mae", "alpha_range", "param_range"
     }
 
     for chave, valor in dados.items():
-        # Ignora objetos de figura, amostragem, listas ou modelo na extração de métricas numéricas
-        if isinstance(valor, plt.Figure) or chave in chaves_ignoradas:
+        if chave in chaves_ignoradas or isinstance(valor, plt.Figure):
             continue
 
         chave_san = _sanitizar_nome(str(chave))
@@ -53,13 +40,13 @@ def _extrair_metricas_planas(
         if isinstance(valor, (int, float)) and not isinstance(valor, bool):
             metricas_planas[nome_completo] = float(valor)
         elif isinstance(valor, dict):
-            metricas_planas.update(_extrair_metricas_planas(nome_completo, valor))
+            metricas_planas.update(_extrair_metricas_num_planas(nome_completo, valor))
 
     return metricas_planas
 
 
 class MLflowObservador(IObservadorML):
-    """Observador Concreto que escuta eventos do Pipeline e registra métricas, figuras, equações e modelos no MLflow Server & Model Registry."""
+    """Observador Concreto que registra métricas, figuras e modelos no MLflow Server & Model Registry."""
 
     def __init__(
         self,
@@ -77,21 +64,27 @@ class MLflowObservador(IObservadorML):
 
     @override
     def iniciar_experimento(
-        self, nome_experimento: str, parametros: dict[str, object]
+        self, nome_experimento: str, parametros: dict
     ) -> None:
         """Inicializa a conexão com o MLflow Server e inicia uma nova corrida (Run)."""
         try:
             mlflow.set_tracking_uri(self.__tracking_uri)
 
-            exp = mlflow.get_experiment_by_name(self.__nome_experimento)
-            if exp and exp.lifecycle_stage == "deleted":
-                self.__nome_experimento = f"{self.__nome_experimento}_V2"
+            try:
+                exp = mlflow.get_experiment_by_name(self.__nome_experimento)
+                if exp and exp.lifecycle_stage == "deleted":
+                    self.__nome_experimento = f"{self.__nome_experimento}_Ativo"
+
+                mlflow.set_experiment(self.__nome_experimento)
+            except Exception:
+                self.__nome_experimento = "Experimento_Previsão_Apartamentos_RP_Ativo"
+                mlflow.set_experiment(self.__nome_experimento)
 
             nested = mlflow.active_run() is not None
             mlflow.start_run(run_name=nome_experimento, nested=nested)
 
             params_filtrados: dict[str, Any] = {
-                _sanitizar_nome(k): v
+                _sanitizar_nome(str(k)): v
                 for k, v in parametros.items()
                 if isinstance(v, (int, float, str, bool))
             }
@@ -112,30 +105,22 @@ class MLflowObservador(IObservadorML):
 
     @override
     def registrar_metricas(
-        self, nome_modelo: str, metricas: dict[str, object]
+        self, metricas: dict
     ) -> None:
-        """Ponto de entrada do observador para registrar todas as métricas e artefatos de um modelo."""
+        """Ponto de entrada do observador para registrar todas as métricas, parâmetros e artefatos no MLflow."""
         try:
-            if mlflow.active_run():
-                prefixo = _sanitizar_nome(nome_modelo)
+            run = mlflow.active_run()
+            if run and getattr(run.info, "lifecycle_stage", "active") == "active":
+                prefixo = _sanitizar_nome(str(metricas.get("nome_modelo", "")))
 
-                # 1. Registra parâmetros da busca em grade (hiperparâmetros otimizados)
-                self.__logar_parametros_tuning(prefixo, metricas, nome_modelo)
+                # 1. Registra métricas numéricas escalares (Batch Log Metrics)
+                self.__logar_metricas_num_planas(prefixo, metricas)
 
-                # 2. Registra métricas numéricas em lote (Batching)
-                self.__logar_metricas_em_lote(prefixo, metricas, nome_modelo)
+                # 2. Registra parâmetros, figuras e textos
+                self.__logar_parametros_figuras_textos(prefixo, metricas)
 
-                # 3. Registra gráficos e figuras Matplotlib como artefatos de imagem
-                self.__logar_figuras_matplotlib(prefixo, metricas, nome_modelo)
-
-                # 4. Registra equações matemáticas e parâmetros textuais
-                self.__logar_equacoes_e_textos(prefixo, metricas, nome_modelo)
-
-                # 5. Registra o estimador treinado com Assinatura (Schema Inputs & Outputs) no Model Registry
-                self.__registrar_modelo_no_registry(prefixo, metricas, nome_modelo)
-
-                # 6. Registra os vetores das 30 iterações diretamente no MLflow (métricas com step, parâmetros e resumo de texto)
-                self.__logar_vetores_iteracoes_no_mlflow(prefixo, metricas, nome_modelo)
+                # 3. Registra o estimador/modelo no Model Registry se modelo_objeto estiver presente
+                self.__registrar_modelo_no_registry(prefixo, metricas)
 
         except Exception as e:
             logger.warning(
@@ -143,126 +128,73 @@ class MLflowObservador(IObservadorML):
                 e,
             )
 
-    def __logar_vetores_iteracoes_no_mlflow(
-        self, prefixo: str, metricas: dict[str, object], nome_modelo: str
+    def __logar_metricas_num_planas(
+        self, prefixo: str, metricas: dict
     ) -> None:
-        """Registra os vetores das 30 iterações diretamente como Métricas (com step=i) e Parâmetros na interface do MLflow."""
-        chaves_vetores = [
-            "scores_por_iteracao_rmse",
-            "scores_por_iteracao_r2",
-            "scores_por_iteracao_mae",
-            "oof_scores_por_iteracao_rmse",
-            "oof_scores_por_iteracao_r2",
-            "oof_scores_por_iteracao_mae",
-        ]
-
-        vetor_encontrado = False
-
-        for chave in chaves_vetores:
-            vetor = metricas.get(chave)
-            if isinstance(vetor, list) and vetor:
-                vetor_encontrado = True
-                nome_metrica = f"{prefixo}_{_sanitizar_nome(chave)}"
-
-                # 1. Loga cada valor como métrica no MLflow com step=1..30 para gráfico na UI
-                for idx, valor in enumerate(vetor):
-                    if isinstance(valor, (int, float)) and not isinstance(valor, bool):
-                        mlflow.log_metric(nome_metrica, float(valor), step=idx + 1)
-
-                # 2. Loga a lista como parâmetro para exibição direta no painel de Parâmetros do MLflow
-                nome_param = f"vetor_{_sanitizar_nome(chave)}"
-                mlflow.log_param(nome_param, str(vetor))
-
-        if vetor_encontrado:
-            logger.info(
-                "Vetores das 30 iterações para '%s' registrados diretamente nas métricas e parâmetros do MLflow.",
-                nome_modelo,
-            )
-
-    def __logar_parametros_tuning(
-        self, prefixo: str, metricas: dict[str, object], nome_modelo: str
-    ) -> None:
-        """Registra parâmetros do tuning (best_params_) no MLflow."""
-        melhores_params = metricas.get("melhores_parametros")
-        if isinstance(melhores_params, dict):
-            params_sanitizados = {
-                f"{prefixo}_{_sanitizar_nome(str(k))}": str(v)
-                for k, v in melhores_params.items()
-            }
-            if params_sanitizados:
-                mlflow.log_params(params_sanitizados)
-                logger.info(
-                    "Parâmetros de tuning do modelo '%s' (%d params) registrados no MLflow.",
-                    nome_modelo,
-                    len(params_sanitizados),
-                )
-
-    def __logar_metricas_em_lote(
-        self, prefixo: str, metricas: dict[str, object], nome_modelo: str
-    ) -> None:
-        """Extrai e registra todas as métricas numéricas de forma otimizada em uma única requisição HTTP (batch)."""
-        metricas_batch = _extrair_metricas_planas(prefixo, metricas)
-        if metricas_batch:
+        """1. Registra métricas numéricas escalares de forma otimizada em lote (Batching)."""
+        metricas_num = _extrair_metricas_num_planas("", metricas)
+        if metricas_num:
             step = (
                 int(metricas["iteracao"])
                 if "iteracao" in metricas and isinstance(metricas["iteracao"], (int, float))
                 else None
             )
-            mlflow.log_metrics(metricas_batch, step=step)
+            mlflow.log_metrics(metricas_num, step=step)
             logger.info(
-                "Métricas do modelo '%s' (%d métricas%s) registradas em lote (batch) no MLflow.",
-                nome_modelo,
-                len(metricas_batch),
-                f", iteração step={step}" if step is not None else "",
+                "Métricas registradas no MLflow (%d métricas numéricas).",
+                len(metricas_num),
             )
 
-    def __logar_figuras_matplotlib(
-        self, prefixo: str, metricas: dict[str, object], nome_modelo: str
+    def __logar_parametros_figuras_textos(
+        self, prefixo: str, metricas: dict
     ) -> None:
-        """Filtra objetos plt.Figure no dicionário de métricas e os salva como artefatos PNG no MLflow."""
+        """2. Registra parâmetros textuais, equações como artefatos de texto e figuras Matplotlib."""
         for chave, valor in metricas.items():
-            if isinstance(valor, plt.Figure):
-                nome_fig_artifact = (
-                    f"under_over_{prefixo}_{_sanitizar_nome(chave)}.png"
-                )
-                mlflow.log_figure(valor, nome_fig_artifact)
-                plt.close(valor)
-                logger.info(
-                    "Figura Matplotlib '%s' vinda do modelo '%s' registrada com sucesso no MLflow.",
-                    nome_fig_artifact,
-                    nome_modelo,
-                )
+            if chave in ("modelo_objeto", "x_sample", "y_sample"):
+                continue
 
-    def __logar_equacoes_e_textos(
-        self, prefixo: str, metricas: dict[str, object], nome_modelo: str
-    ) -> None:
-        """Registra parâmetros do tipo texto (ex: equações matemáticas da reta) como parâmetros e arquivos .txt no MLflow."""
-        for chave, valor in metricas.items():
+            chave_san = _sanitizar_nome(str(chave))
+
             if isinstance(valor, str):
-                chave_san = _sanitizar_nome(chave)
-                mlflow.log_param(f"{prefixo}_{chave_san}", valor)
-
+                mlflow.log_param(chave_san, valor[:250])
                 if "equacao" in chave.lower():
-                    nome_txt_artifact = f"equacao_reta_{prefixo}.txt"
-                    mlflow.log_text(valor, nome_txt_artifact)
-                    logger.info(
-                        "Equação da reta do modelo '%s' registrada como parâmetro e artefato de texto ('%s') no MLflow.",
-                        nome_modelo,
-                        nome_txt_artifact,
-                    )
+                    nome_txt = f"{chave_san}_{prefixo}.txt" if prefixo else f"{chave_san}.txt"
+                    mlflow.log_text(valor, artifact_file=nome_txt)
+                    logger.info("Equação registrada como artefato no MLflow: '%s'", nome_txt)
+
+            elif isinstance(valor, bool):
+                mlflow.log_param(chave_san, str(valor))
+
+            elif isinstance(valor, dict) and ("intercepto" in chave.lower() or "coef" in chave.lower()):
+                linhas_txt = [f"{k}: {v}" for k, v in valor.items()]
+                conteudo_txt = "\n".join(linhas_txt)
+                nome_txt = f"{chave_san}_{prefixo}.txt" if prefixo else f"{chave_san}.txt"
+                mlflow.log_text(conteudo_txt, artifact_file=nome_txt)
+
+            elif isinstance(valor, list) and valor:
+                mlflow.log_param(f"vetor_{chave_san}", str(valor)[:250])
+                if "scores_por_iteracao" in chave:
+                    for idx, v in enumerate(valor):
+                        if isinstance(v, (int, float)) and not isinstance(v, bool):
+                            mlflow.log_metric(chave_san, float(v), step=idx + 1)
+
+            elif isinstance(valor, plt.Figure):
+                nome_fig = (
+                    f"under_over_{prefixo}_{chave_san}.png"
+                    if prefixo
+                    else f"fig_{chave_san}.png"
+                )
+                mlflow.log_figure(valor, nome_fig)
+                plt.close(valor)
+                logger.info("Figura Matplotlib '%s' registrada no MLflow.", nome_fig)
 
     def __registrar_modelo_no_registry(
-        self, prefixo: str, metricas: dict[str, object], nome_modelo: str
+        self, prefixo: str, metricas: dict
     ) -> None:
-        """Serializa o estimador treinado com assinatura de Schema (Inputs/Outputs) e publica no Model Registry."""
+        """3. Registra o estimador/modelo no Model Registry se modelo_objeto estiver presente."""
         modelo_obj = metricas.get("modelo_objeto")
         if modelo_obj is not None:
             try:
-                nome_registry = (
-                    self.__nome_modelo_registry or f"Modelo_{prefixo}"
-                )
-
-                # Inferência do Esquema de Entradas (Inputs) e Saídas (Outputs)
                 x_sample = metricas.get("x_sample")
                 y_sample = metricas.get("y_sample")
                 signature = None
@@ -270,33 +202,33 @@ class MLflowObservador(IObservadorML):
                 if x_sample is not None and y_sample is not None:
                     try:
                         signature = infer_signature(x_sample, y_sample)
-                    except Exception as ex_sig:
-                        logger.warning(
-                            "⚠️ Aviso ao inferir assinatura do esquema MLflow: %s",
-                            ex_sig,
-                        )
+                    except Exception:
+                        pass
+
+                nome_registry = (
+                    f"{self.__nome_modelo_registry}_{prefixo}"
+                    if self.__nome_modelo_registry and prefixo
+                    else (self.__nome_modelo_registry or "Modelo_Preco_Imoveis_RP")
+                )
 
                 mlflow.sklearn.log_model(
                     sk_model=modelo_obj,
-                    artifact_path="modelo_scikit_learn",
+                    name="modelo_scikit_learn",
                     signature=signature,
                     registered_model_name=nome_registry,
                 )
                 logger.info(
-                    "Modelo '%s' registrado no MLflow Model Registry sob o nome '%s' (com esquema de Inputs/Outputs).",
-                    nome_modelo,
-                    nome_registry,
+                    "Modelo registrado no Model Registry sob '%s'.", nome_registry
                 )
             except Exception as ex_reg:
-                logger.warning(
-                    "⚠️ Aviso ao registrar modelo no Model Registry: %s", ex_reg
-                )
+                logger.warning("⚠️ Aviso ao registrar modelo no MLflow: %s", ex_reg)
 
     @override
     def finalizar_experimento(self) -> None:
-        """Finaliza a corrida ativa (Run) no MLflow Server."""
+        """Finaliza a corrida ativa (Run) no MLflow Server se estiver ativa."""
         try:
-            if mlflow.active_run():
+            run = mlflow.active_run()
+            if run and getattr(run.info, "lifecycle_stage", "active") == "active":
                 mlflow.end_run()
                 logger.info("Corrida do MLflow finalizada.")
         except Exception as e:

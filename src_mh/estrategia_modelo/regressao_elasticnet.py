@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from io import BytesIO
 from typing import Any, override
 
@@ -7,7 +8,8 @@ import mlflow
 import numpy as np
 import pandas as pd
 from PIL import Image
-from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.base import clone
+from sklearn.linear_model import ElasticNet
 from sklearn.metrics import (
     mean_absolute_error,
     mean_squared_error,
@@ -16,9 +18,10 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import (
     GridSearchCV,
+    KFold,
+    cross_validate,
     validation_curve,
 )
-from sklearn.pipeline import Pipeline
 
 from src_mh.config.config import Config
 from src_mh.estrategia_modelo.estrategia_modelo import EstrategiaModelo
@@ -26,37 +29,35 @@ from src_mh.estrategia_modelo.estrategia_modelo import EstrategiaModelo
 logger = logging.getLogger(__name__)
 
 
-class RegressaoLinearEstrategia(
+class RegressaoElasticNetEstrategia(
     EstrategiaModelo[pd.DataFrame, pd.Series, np.ndarray]
 ):
+    """Estratégia Concreta de Machine Learning utilizando Regressão ElasticNet (Combinação L1 e L2)."""
 
-    def __init__(self, params: dict):
-
-        self.__params = params
-        self.__modelo = LinearRegression(**params)
+    def __init__(self, params: dict | None = None):
+        self.__params = params or {
+            "alpha": getattr(Config, "alpha_elasticnet", 1.0),
+            "l1_ratio": getattr(Config, "l1_ratio_elasticnet", 0.5),
+            "fit_intercept": getattr(Config, "fit_intercept_elasticnet", True),
+            "max_iter": getattr(Config, "max_iter_elasticnet", 2000),
+        }
+        self.__modelo = ElasticNet(**self.__params)
         self.__colunas: list[str] = []
-        self.__params_turing = {
-            'regressor__fit_intercept': Config.fit_intercept_turing_rl,
-            'regressor__positive': Config.positive_turing_rl
+        self.__params_tuning = {
+            "alpha": getattr(Config, "alpha_elasticnet_turing", [0.01, 0.1, 1.0, 10.0, 100.0]),
+            "l1_ratio": getattr(Config, "l1_ratio_elasticnet_turing", [0.1, 0.3, 0.5, 0.7, 0.9]),
+            "fit_intercept": getattr(Config, "fit_intercept_turing_elasticnet", [True, False]),
         }
 
-        start = Config.param_range_start_rl
-        end = Config.param_range_end_rl
-        num = Config.param_range_num_rl
+        start = getattr(Config, "param_range_start_rl", -3)
+        end = getattr(Config, "param_range_end_rl", 2)
+        num = getattr(Config, "param_range_num_rl", 10)
         self.__param_range = np.logspace(start, end, num)
-        self.__regressor = Pipeline(
-            [
-                (
-                    "regressor",
-                    LinearRegression()
-                )
-            ]
-        )
 
     @property
     @override
     def nome(self) -> str:
-        return "Regressão Linear"
+        return "Regressão ElasticNet"
 
     @property
     @override
@@ -89,7 +90,7 @@ class RegressaoLinearEstrategia(
 
     @override
     def obter_equacao_reta_geral(self) -> str:
-        """Gera a representação em texto da equação geral unificada da reta de regressão."""
+        """Gera a representação em texto da equação geral da reta de regressão ElasticNet."""
         intercepto_base = round(float(self.__modelo.intercept_), 2)
         termos = [f"{intercepto_base}", "+ (0.00 * Zona_Centro)"]
 
@@ -102,11 +103,15 @@ class RegressaoLinearEstrategia(
 
     @override
     def obter_curva_validacao(
-            self, x: pd.DataFrame, y: pd.Series
+        self, x: pd.DataFrame, y: pd.Series
     ) -> dict[str, object]:
-        """Calcula as pontuações da curva de validação (validation_curve)."""
+        """Calcula as pontuações da curva de validação variando alpha."""
         train_scores, test_scores = validation_curve(
-            Ridge(fit_intercept=self.__modelo.fit_intercept),
+            ElasticNet(
+                l1_ratio=self.__modelo.l1_ratio,
+                fit_intercept=self.__modelo.fit_intercept,
+                max_iter=2000,
+            ),
             x,
             y,
             param_name="alpha",
@@ -130,7 +135,7 @@ class RegressaoLinearEstrategia(
 
     @override
     def gerar_figura_underfit_overfit(self, dados: dict[str, Any]) -> plt.Figure | None:
-        """Gera a figura Matplotlib destacando visualmente Bias vs Variance e salva no MLflow."""
+        """Gera a figura Matplotlib destacando visualmente Bias vs Variance para Regressão ElasticNet."""
         if not dados:
             logger.warning("Sem dados para gerar gráfico")
             return None
@@ -143,29 +148,24 @@ class RegressaoLinearEstrategia(
             logger.warning("Sem dados para gerar gráfico")
             return None
 
-        # Cria figura e eixo
         fig, ax = plt.subplots(figsize=(12, 7))
-
-        # Plota curvas em escala logarítmica
         ax.semilogx(alpha, train_rmse, marker="o", label="Treino")
         ax.semilogx(alpha, val_rmse, marker="o", label="Validação")
 
-        # Labels e título
-        ax.set_xlabel("alpha (Regularização)")
+        ax.set_xlabel("alpha (Regularização L1 + L2)")
         ax.set_ylabel("RMSE")
-        ax.set_title("Regressão Linear Regularizada — Bias vs Variance")
+        ax.set_title("Regressão ElasticNet — Bias vs Variance")
         ax.legend()
         ax.grid(True)
         fig.tight_layout()
 
-        # Salvar no MLflow se existir run ativa
         try:
             if mlflow.active_run():
                 buf = BytesIO()
                 fig.savefig(buf, format="png")
                 buf.seek(0)
                 img = Image.open(buf)
-                mlflow.log_image(img, "under_over_linear.png")
+                mlflow.log_image(img, "under_over_elasticnet.png")
         except Exception as e:
             logger.warning("Aviso ao salvar imagem no MLflow: %s", e)
 
@@ -173,29 +173,25 @@ class RegressaoLinearEstrategia(
 
     @override
     def realizar_grid_search(
-            self, x: pd.DataFrame, y: pd.Series
+        self, x: pd.DataFrame, y: pd.Series
     ) -> GridSearchCV:
-        """Executa busca em grade de hiperparâmetros (GridSearchCV) utilizando as configurações do YAML/Config."""
-        pipeline = Pipeline([("regressor", Ridge(fit_intercept=self.__modelo.fit_intercept))])
-
+        """Executa busca em grade de hiperparâmetros (GridSearchCV) para Regressão ElasticNet."""
         grid_search = GridSearchCV(
-            estimator=pipeline,
-            param_grid=self.__params_turing,
-            scoring='neg_root_mean_squared_error',
+            estimator=ElasticNet(max_iter=2000),
+            param_grid=self.__params_tuning,
+            scoring="neg_root_mean_squared_error",
             cv=5,
             n_jobs=4,
             verbose=1,
             return_train_score=True,
         )
-
         grid_search.fit(x, y)
         return grid_search
 
     @override
     def obter_resultado_grid_search(
-            self, grid_search: GridSearchCV
+        self, grid_search: GridSearchCV
     ) -> dict[str, Any]:
-        """Extrai e estrutura os resultados detalhados da busca em grade (GridSearchCV)."""
         if not hasattr(grid_search, "best_params_"):
             return {}
 
@@ -216,8 +212,97 @@ class RegressaoLinearEstrategia(
         }
 
     @override
+    def realizar_validacao_cruzada(
+        self, x: pd.DataFrame, y: pd.Series, iteracao: int = 0
+    ) -> dict[str, Any]:
+        """Executa 1 iteração de K-Fold Cross-Validation para a estratégia ElasticNet."""
+        kf = KFold(n_splits=5, shuffle=True, random_state=iteracao)
+
+        scoring = {
+            "r2": "r2",
+            "neg_mean_squared_error": "neg_mean_squared_error",
+            "neg_mean_absolute_error": "neg_mean_absolute_error",
+        }
+
+        scores = cross_validate(
+            self.__modelo,
+            x,
+            y,
+            cv=kf,
+            scoring=scoring,
+            return_train_score=True,
+            n_jobs=-1,
+        )
+
+        oof_pred = np.zeros(len(x))
+        residuos_totais: list[float] = []
+
+        for train_idx, val_idx in kf.split(x, y):
+            x_tr, y_tr = x.iloc[train_idx], y.iloc[train_idx]
+            x_val, y_val = x.iloc[val_idx], y.iloc[val_idx]
+
+            mdl = clone(self.__modelo)
+            mdl.fit(x_tr, y_tr)
+            preds = mdl.predict(x_val)
+            oof_pred[val_idx] = preds
+            residuos_totais.extend((y_val - preds).tolist())
+
+        y_arr = np.asarray(y, dtype=float)
+        oof_r2 = round(float(r2_score(y_arr, oof_pred)), 4)
+        oof_rmse = round(float(np.sqrt(mean_squared_error(y_arr, oof_pred))), 2)
+        oof_mae = round(float(mean_absolute_error(y_arr, oof_pred)), 2)
+
+        results_dict = {
+            "test_r2": [round(float(v), 4) for v in scores["test_r2"]],
+            "test_rmse": [round(float(np.sqrt(-v)), 2) for v in scores["test_neg_mean_squared_error"]],
+            "test_mae": [round(float(-v), 2) for v in scores["test_neg_mean_absolute_error"]],
+            "train_r2": [round(float(v), 4) for v in scores["train_r2"]],
+            "train_rmse": [round(float(np.sqrt(-v)), 2) for v in scores["train_neg_mean_squared_error"]],
+            "train_mae": [round(float(-v), 2) for v in scores["train_neg_mean_absolute_error"]],
+            "fit_time": [round(float(v), 4) for v in scores["fit_time"]],
+            "score_time": [round(float(v), 4) for v in scores["score_time"]],
+        }
+
+        mean_scores = {
+            "mean_test_r2": round(float(np.mean(results_dict["test_r2"])), 4),
+            "mean_test_mse": round(float(np.mean([-v for v in scores["test_neg_mean_squared_error"]])), 2),
+            "mean_test_mae": round(float(np.mean(results_dict["test_mae"])), 2),
+            "mean_test_rmse": round(float(np.mean(results_dict["test_rmse"])), 2),
+            "mean_train_r2": round(float(np.mean(results_dict["train_r2"])), 4),
+            "mean_train_mse": round(float(np.mean([-v for v in scores["train_neg_mean_squared_error"]])), 2),
+            "mean_train_mae": round(float(np.mean(results_dict["train_mae"])), 2),
+            "mean_train_rmse": round(float(np.mean(results_dict["train_rmse"])), 2),
+            "mean_fit_time": round(float(np.mean(results_dict["fit_time"])), 4),
+            "mean_score_time": round(float(np.mean(results_dict["score_time"])), 4),
+            "oof_completo_r2": oof_r2,
+            "oof_completo_rmse": oof_rmse,
+            "oof_completo_mae": oof_mae,
+        }
+
+        rmse_folds = [
+            round(float(np.sqrt(-mse)), 2)
+            for mse in scores["test_neg_mean_squared_error"]
+        ]
+
+        pipeline_fitted = clone(self.__modelo).fit(x, y)
+        x_sample = x.head(5)
+        y_sample = pipeline_fitted.predict(x_sample)
+
+        return {
+            "results_dict": results_dict,
+            "mean_scores": mean_scores,
+            "residuos_totais": [round(float(r), 2) for r in residuos_totais],
+            "iteracao": iteracao,
+            "rmse_folds": rmse_folds,
+            "data_coleta": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            "modelo_objeto": pipeline_fitted,
+            "x_sample": x_sample,
+            "y_sample": y_sample,
+        }
+
+    @override
     def obter_resultados(
-            self, x_test: pd.DataFrame, y_test: pd.Series
+        self, x_test: pd.DataFrame, y_test: pd.Series
     ) -> dict[str, object]:
         y_pred = self.predizer(x_test)
         y_test_arr = np.asarray(y_test, dtype=float)
@@ -258,7 +343,6 @@ class RegressaoLinearEstrategia(
             "preco_medio_real": round(float(np.mean(y_test_arr)), 2),
             "preco_medio_previsto": round(float(np.mean(y_pred_arr)), 2),
             "n_amostras": int(len(y_test_arr)),
-            # Interpretabilidade
             "intercepto": round(float(self.__modelo.intercept_), 2),
             "coeficientes": coeficientes_dict,
         }

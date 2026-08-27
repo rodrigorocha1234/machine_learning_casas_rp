@@ -8,19 +8,81 @@ treinamento_simples:
     scoring: "neg_root_mean_squared_error"
     n_jobs: 4
     random_state: 42
-  arvore_decisao:
-
+  regressao_ridge:
+    alpha: 1.0
+    fit_intercept: true
+    solver: "auto"
+    cv_folds: 5
+    scoring: "neg_root_mean_squared_error"
+    n_jobs: 4
+    random_state: 42
+  regressao_lasso:
+    alpha: 1.0
+    fit_intercept: true
+    max_iter: 2000
+    cv_folds: 5
+    scoring: "neg_root_mean_squared_error"
+    n_jobs: 4
+    random_state: 42
+  regressao_elasticnet:
+    alpha: 1.0
+    l1_ratio: 0.5
+    fit_intercept: true
+    max_iter: 2000
+    cv_folds: 5
+    scoring: "neg_root_mean_squared_error"
+    n_jobs: 4
+    random_state: 42
+  regressao_polinomial:
+    degree: 2
+    include_bias: false
+    fit_intercept: true
+    positive: false
+    cv_folds: 5
+    scoring: "neg_root_mean_squared_error"
+    n_jobs: 4
+    random_state: 42
 
 turing_parametros:
   regressao_linear:
     fit_intercept: [True, False]
     positive: [True, False]
+  regressao_ridge:
+    alpha: [0.01, 0.1, 1.0, 10.0, 100.0]
+    fit_intercept: [True, False]
+    solver: ["auto", "svd", "cholesky", "lsqr"]
+  regressao_lasso:
+    alpha: [0.01, 0.1, 1.0, 10.0, 100.0]
+    fit_intercept: [True, False]
+    selection: ["cyclic", "random"]
+  regressao_elasticnet:
+    alpha: [0.01, 0.1, 1.0, 10.0, 100.0]
+    l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
+    fit_intercept: [True, False]
+  regressao_polinomial:
+    poly__degree: [1, 2, 3]
+    regressor__fit_intercept: [True, False]
+    regressor__positive: [True, False]
 
 validacao_cruzada:
   regressao_linear:
     fit_intercept: True
     positive: True
-
+  regressao_ridge:
+    alpha: 1.0
+    fit_intercept: True
+  regressao_lasso:
+    alpha: 1.0
+    fit_intercept: True
+  regressao_elasticnet:
+    alpha: 1.0
+    l1_ratio: 0.5
+    fit_intercept: True
+  regressao_polinomial:
+    degree: 2
+    include_bias: False
+    fit_intercept: True
+    positive: False
 
 carregador_dados:
   colunas:

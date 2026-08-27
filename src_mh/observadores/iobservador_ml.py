@@ -12,10 +12,9 @@ class IObservadorML(ABC):
 
     @abstractmethod
     def registrar_metricas(
-        self, nome_modelo: str, metricas: dict[str, object]
+            self, metricas: dict
     ) -> None:
-        """Notificado para registrar as métricas geradas por um modelo."""
-        pass
+        """Ponto de entrada do observador para registrar todas as métricas e  de um modelo."""
 
     @abstractmethod
     def finalizar_experimento(self) -> None:

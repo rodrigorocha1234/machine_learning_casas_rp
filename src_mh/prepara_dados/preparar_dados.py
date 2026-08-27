@@ -1,3 +1,4 @@
+import os.path
 from typing import Final, Literal, override
 
 import pandas as pd
@@ -129,6 +130,20 @@ class PrepararDadosDataFame(
         'Vila do Golf': 'Zona Sul'
     }
 
+    def __init__(self, base_original: str | None = None):
+        self.__base_original = base_original or os.path.join(
+            os.getcwd(), 'dados_imoveis', 'bairro_final_v3_engineered.xlsx'
+        )
+
+    @property
+    def base_original(self) -> str:
+        """Caminho completo da base original de imóveis."""
+        return self.__base_original
+
+    def carregar_base_original(self) -> pd.DataFrame:
+        """Carrega os dados diretamente a partir do atributo self.__base_original."""
+        return pd.read_excel(self.__base_original)
+
     def __classificar_zonas(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Classifica os bairros em zonas da cidade.
@@ -176,8 +191,11 @@ class PrepararDadosDataFame(
     @override
     def realizar_engenharia_atributos(
             self,
-            df: pd.DataFrame
+            df: pd.DataFrame | None = None
     ) -> pd.DataFrame:
+        if df is None:
+            df = self.carregar_base_original()
+
         df_copy = self.__classificar_zonas(df)
 
         # Remove colunas que podem causar dimensionalidade desnecessária

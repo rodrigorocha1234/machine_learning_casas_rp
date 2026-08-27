@@ -19,15 +19,15 @@ class ConsoleObservador(IObservadorML):
 
     @override
     def registrar_metricas(
-        self, nome_modelo: str, metricas: dict[str, object]
+            self, metricas: dict
     ) -> None:
-        logger.info("📊 [CONSOLE OBSERVER] Métricas registradas do modelo '%s':", nome_modelo)
+        """Ponto de entrada do observador para registrar todas as métricas de um modelo."""
+        logger.info("📊 [CONSOLE OBSERVER] Métricas registradas:")
         for k, v in metricas.items():
-            if isinstance(v, (int, float, str)):
+            if isinstance(v, (int, float, str, bool)):
                 logger.info("   - %s: %s", k, v)
-            elif isinstance(v, plt.Figure):
-                logger.info("   - %s: [Objeto Figure Matplotlib]", k)
-
+            elif isinstance(v, dict):
+                logger.info("   - %s: %s", k, v)
     @override
     def finalizar_experimento(self) -> None:
         logger.info("🏁 [CONSOLE OBSERVER] Experimento concluído com sucesso.")
