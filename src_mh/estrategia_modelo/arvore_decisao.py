@@ -129,70 +129,11 @@ class ArvoreDecisaoEstrategia(
 
     @override
     def gerar_figura_underfit_overfit(self, dados: dict[str, Any]) -> plt.Figure | None:
-        """Gera figura altamente legível destacando visualmente Underfitting vs Overfitting (Bias vs Variance)."""
-        if not dados:
-            logger.warning("Sem dados para gerar gráfico")
-            return None
-
-        depths = dados.get("max_depth_range") or dados.get("param_range", [])
-        train_rmse = dados.get("train_rmse") or dados.get("train_scores_mean", [])
-        val_rmse = dados.get("val_rmse") or dados.get("test_scores_mean", [])
-
-        if not depths or not train_rmse or not val_rmse:
-            logger.warning("Sem dados para gerar gráfico")
-            return None
-
-        plt.style.use("seaborn-v0_8-whitegrid")
-        fig, ax = plt.subplots(figsize=(13, 7), dpi=300)
-
-        # Converter para milhares de reais (R$ k) para máxima legibilidade
-        train_k = [v / 1000.0 for v in train_rmse]
-        val_k = [v / 1000.0 for v in val_rmse]
-
-        ax.plot(depths, train_k, marker="o", linewidth=2.5, markersize=7, label="Treino (Histórico)", color="#1f77b4")
-        ax.plot(depths, val_k, marker="s", linewidth=2.5, markersize=7, label="Validação (Dados Novos)", color="#ff7f0e")
-
-        # Formatação do eixo Y em Reais (R$ Milhares)
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: f"R$ {x:.0f}k"))
-        ax.set_xticks(depths)
-
-        ax.set_xlabel("Profundidade Máxima da Árvore (max_depth)", fontsize=13, fontweight="bold", labelpad=10)
-        ax.set_ylabel("Erro de Avaliação (RMSE em R$ Milhares)", fontsize=13, fontweight="bold", labelpad=10)
-        ax.set_title("Árvore de Decisão — Diagnóstico Visual de Underfitting vs. Overfitting", fontsize=15, fontweight="bold", pad=15)
-
-        # Sombreamento das Regiões do Diagnóstico
-        ax.axvspan(1, 2, color="#f8d7da", alpha=0.35, label="Região de Underfitting (Subajuste)")
-        ax.axvspan(2, 4, color="#d4edda", alpha=0.35, label="Região de Ajuste Ótimo (Ideal)")
-        ax.axvspan(4, max(depths), color="#fff3cd", alpha=0.35, label="Região de Overfitting (GAP Treino-Validação)")
-
-        # Anotações dos pontos críticos
-        idx_opt = 3  # depth = 4
-        if idx_opt < len(depths):
-            ax.annotate(
-                f"GAP de Overfitting:\nΔ = R$ {(val_k[idx_opt] - train_k[idx_opt]):.1f}k",
-                xy=(depths[idx_opt], val_k[idx_opt]),
-                xytext=(depths[idx_opt] + 1.5, val_k[idx_opt] + 15),
-                arrowprops=dict(facecolor="#d9534f", shrink=0.08, width=1.5, headwidth=8),
-                fontsize=11,
-                fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.4", fc="#ffffff", ec="#d9534f", lw=1.5)
-            )
-
-        ax.legend(loc="upper right", frameon=True, facecolor="white", framealpha=0.95, fontsize=11)
-        ax.grid(True, linestyle="--", alpha=0.6)
-        fig.tight_layout()
-
-        try:
-            if mlflow.active_run():
-                buf = BytesIO()
-                fig.savefig(buf, format="png", dpi=300)
-                buf.seek(0)
-                img = Image.open(buf)
-                mlflow.log_image(img, "under_over_arvore_decisao.png")
-        except Exception as e:
-            logger.warning("Aviso ao salvar imagem no MLflow: %s", e)
-
-        return fig
+        """Gera a figura de Diagnóstico de Overfitting vs Underfitting no padrão gráfico da classe base."""
+        return self._plotar_diagnostico_overfitting_underfitting(
+            dados=dados,
+            nome_artefato_mlflow="under_over_arvore_decisao.png",
+        )
 
     @override
     def realizar_grid_search(

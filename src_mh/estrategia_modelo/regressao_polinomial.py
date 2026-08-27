@@ -138,46 +138,11 @@ class RegressaoPolinomialEstrategia(
     def gerar_figura_underfit_overfit(
         self, dados: dict[str, Any]
     ) -> plt.Figure | None:
-        """Gera a figura Matplotlib da curva de validação (Bias vs Variance) e salva no MLflow."""
-        if not dados:
-            self._logger.warning("Sem dados para gerar gráfico")
-            return None
-
-        alpha = dados.get("alpha_range") or dados.get("param_range", [])
-        train_rmse = dados.get("train_rmse") or dados.get("train_scores_mean", [])
-        val_rmse = dados.get("val_rmse") or dados.get("test_scores_mean", [])
-
-        if not alpha or not train_rmse or not val_rmse:
-            self._logger.warning("Sem dados para gerar gráfico")
-            return None
-
-        # Cria figura e eixo
-        fig, ax = plt.subplots(figsize=(12, 7))
-
-        # Plota curvas
-        ax.plot(alpha, train_rmse, marker="o", label="Treino")
-        ax.plot(alpha, val_rmse, marker="o", label="Validação")
-
-        # Labels e título
-        ax.set_xlabel("Grau Polinomial (Degree)")
-        ax.set_ylabel("RMSE")
-        ax.set_title("Regressão Polinomial — Bias vs Variance")
-        ax.legend()
-        ax.grid(True)
-        fig.tight_layout()
-
-        # Salvar no MLflow se existir run ativa
-        try:
-            if mlflow.active_run():
-                buf = BytesIO()
-                fig.savefig(buf, format="png")
-                buf.seek(0)
-                img = Image.open(buf)
-                mlflow.log_image(img, "under_over_polinomial.png")
-        except Exception as e:
-            self._logger.warning("Aviso ao salvar imagem no MLflow: %s", e)
-
-        return fig
+        """Gera a figura de Diagnóstico de Overfitting vs Underfitting no padrão gráfico da classe base."""
+        return self._plotar_diagnostico_overfitting_underfitting(
+            dados=dados,
+            nome_artefato_mlflow="under_over_polinomial.png",
+        )
 
     @override
     def realizar_grid_search(
