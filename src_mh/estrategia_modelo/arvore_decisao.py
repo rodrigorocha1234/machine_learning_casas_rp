@@ -21,7 +21,7 @@ from sklearn.model_selection import (
     cross_validate,
     validation_curve,
 )
-from sklearn.tree import DecisionTreeRegressor, export_text
+from sklearn.tree import DecisionTreeRegressor, export_text, plot_tree
 
 from src_mh.config.config import Config
 from src_mh.estrategia_modelo.estrategia_modelo import EstrategiaModelo
@@ -39,14 +39,15 @@ class ArvoreDecisaoEstrategia(
             "max_depth": getattr(Config, "max_depth_dt", 6),
             "min_samples_split": getattr(Config, "min_samples_split_dt", 5),
             "min_samples_leaf": getattr(Config, "min_samples_leaf_dt", 2),
-            "random_state": getattr(Config, "r_state_dt", 42),
+            "random_state": 42,
         }
         self.__modelo = DecisionTreeRegressor(**self.__params)
         self.__colunas: list[str] = []
+        self.__equacoes_por_zona: dict[str, float] = {}
         self.__params_tuning = {
-            "max_depth": getattr(Config, "max_depth_turing_dt", [3, 5, 7, 10, None]),
-            "min_samples_split": getattr(Config, "min_samples_split_turing_dt", [2, 5, 10]),
-            "min_samples_leaf": getattr(Config, "min_samples_leaf_turing_dt", [1, 2, 4]),
+            "max_depth": getattr(Config, "max_depth_dt_turing", [3, 5, 7, 10, None]),
+            "min_samples_split": getattr(Config, "min_samples_split_dt_turing", [2, 5, 10]),
+            "min_samples_leaf": getattr(Config, "min_samples_leaf_dt_turing", [1, 2, 4]),
         }
         self.__param_range = np.arange(1, 16)
 
@@ -65,35 +66,55 @@ class ArvoreDecisaoEstrategia(
         self.__colunas = list(x_train.columns)
         self.__modelo.fit(x_train, y_train)
 
+        # Calcula o preço médio estimado pela Árvore de Decisão por Zona do Bairro
+        preds_treino = self.__modelo.predict(x_train)
+        equacoes: dict[str, float] = {}
+        zona_cols = [c for c in self.__colunas if c.startswith("Zona_")]
+
+        if zona_cols:
+            mask_centro = (x_train[zona_cols] == 0).all(axis=1)
+            if mask_centro.any():
+                equacoes["Centro/Outros (Baseline)"] = round(float(np.mean(preds_treino[mask_centro])), 2)
+
+            for col in zona_cols:
+                nome_zona = col.replace("Zona_", "")
+                mask = x_train[col] == 1
+                if mask.any():
+                    equacoes[nome_zona] = round(float(np.mean(preds_treino[mask])), 2)
+
+        self.__equacoes_por_zona = equacoes
+
     @override
     def predizer(self, x: pd.DataFrame) -> np.ndarray:
         return self.__modelo.predict(x)
 
     @override
     def obter_equacoes_por_zona(self) -> dict[str, float]:
-        """Importância relativa das variáveis para a Árvore de Decisão."""
-        if not hasattr(self.__modelo, "feature_importances_") or len(self.__colunas) == 0:
-            return {}
-
-        importancias: dict[str, float] = {}
-        for col, imp in zip(self.__colunas, self.__modelo.feature_importances_):
-            importancias[col] = round(float(imp), 4)
-
-        return importancias
+        """Preço médio estimado pela Árvore de Decisão para cada Zona do Bairro."""
+        return self.__equacoes_por_zona
 
     @override
     def obter_equacao_reta_geral(self) -> str:
-        """Exporta as regras textuais da Árvore de Decisão até a profundidade 3."""
+        """Exporta o resumo de preço médio por Zonas do Bairro e as regras textuais da Árvore de Decisão."""
         if not hasattr(self.__modelo, "tree_") or len(self.__colunas) == 0:
             return "Árvore de Decisão não treinada."
 
         regras = export_text(
             self.__modelo,
             feature_names=self.__colunas,
-            max_depth=3,
+            max_depth=4,
             show_weights=True,
         )
-        return f"Regras da Árvore de Decisão (Profundidade <= 3):\n{regras}"
+
+        resumo_zonas = ["=== PREÇO MÉDIO PREVISTO POR ZONA DO BAIRRO (ÁRVORE DE DECISÃO) ==="]
+        if self.__equacoes_por_zona:
+            for zona, preco in self.__equacoes_por_zona.items():
+                resumo_zonas.append(f"• {zona}: R$ {preco:,.2f}".replace(",", "."))
+        else:
+            resumo_zonas.append("• Zonas não identificadas explicitamente no conjunto de dados.")
+
+        resumo_str = "\n".join(resumo_zonas)
+        return f"{resumo_str}\n\n=== REGRAS DE DECISÃO HIERÁRQUICAS (Profundidade <= 4) ===\n{regras}"
 
     @override
     def obter_curva_validacao(
@@ -128,12 +149,81 @@ class ArvoreDecisaoEstrategia(
         }
 
     @override
-    def gerar_figura_underfit_overfit(self, dados: dict[str, Any]) -> plt.Figure | None:
-        """Gera a figura de Diagnóstico de Overfitting vs Underfitting no padrão gráfico da classe base."""
-        return self._plotar_diagnostico_overfitting_underfitting(
-            dados=dados,
-            nome_artefato_mlflow="under_over_arvore_decisao.png",
+    def _plotar_diagnostico_overfitting_underfitting(
+        self, dados: dict[str, Any]
+    ) -> plt.Figure | None:
+        """Gera a figura Matplotlib com as particularidades da Árvore de Decisão (max_depth)."""
+        if not dados:
+            return None
+
+        param_name = dados.get("param_name", "max_depth")
+        param_range = dados.get("max_depth_range") or dados.get("param_range", [])
+        train_rmse = dados.get("train_rmse") or dados.get("train_scores_mean", [])
+        val_rmse = dados.get("val_rmse") or dados.get("test_scores_mean", [])
+
+        if not param_range or not train_rmse or not val_rmse:
+            return None
+
+        x = [float(p) for p in param_range]
+        y_tr = [float(v) for v in train_rmse]
+        y_val = [float(v) for v in val_rmse]
+
+        plt.style.use("seaborn-v0_8-whitegrid")
+        fig, ax = plt.subplots(figsize=(13, 7.5), dpi=300)
+
+        y_min = min(min(y_tr), min(y_val))
+        y_max = max(max(y_tr), max(y_val))
+        y_range = y_max - y_min
+        ax.set_ylim(y_min - y_range * 0.08, y_max + y_range * 0.28)
+
+        ax.plot(x, y_tr, "-o", color="#1f77b4", linewidth=2.5, markersize=7, label="RMSE Treino (Viés / Histórico)", zorder=4)
+        ax.plot(x, y_val, "-o", color="#ff7f0e", linewidth=2.5, markersize=7, label="RMSE Validação (Generalização)", zorder=4)
+        ax.fill_between(x, y_tr, y_val, color="#1f77b4", alpha=0.15, label="Gap Treino × Validação (Variância)", zorder=2)
+
+        min_val_idx = int(np.argmin(y_val))
+        best_param = x[min_val_idx]
+        min_val_rmse = y_val[min_val_idx]
+        best_param_str = f"{int(best_param)}" if isinstance(best_param, float) and best_param.is_integer() else f"{best_param}"
+
+        if len(x) > 1:
+            x_opt_start = x[max(0, min_val_idx - 1)] if min_val_idx > 0 else x[0]
+            x_opt_end = x[min(len(x) - 1, min_val_idx + 1)] if min_val_idx < len(x) - 1 else x[-1]
+            if min_val_idx > 0:
+                ax.axvspan(x[0], x_opt_start, color="#ffebee", alpha=0.4, label="Região de Underfitting (Árvore Rasa)", zorder=1)
+            ax.axvspan(x_opt_start, x_opt_end, color="#e8f5e9", alpha=0.5, label="Região de Ajuste Ótimo da Árvore", zorder=1)
+            if min_val_idx < len(x) - 1:
+                ax.axvspan(x_opt_end, x[-1], color="#fff8e1", alpha=0.4, label="Região de Overfitting (Árvore Profunda / Memorização)", zorder=1)
+
+        ax.axvline(best_param, color="#2e7d32", linestyle="--", linewidth=2.2, label=f"Melhor max_depth = {best_param_str}", zorder=4)
+        ax.plot(best_param, min_val_rmse, "o", color="#ff7f0e", markeredgecolor="#2e7d32", markeredgewidth=2.5, markersize=12, zorder=6)
+
+        if min_val_idx > 0:
+            ax.text(x[0], y_val[0] + y_range * 0.08, " [ UNDERFITTING ] \n (Árvore Rasa / Poucas Divisões) ", fontsize=9, fontweight="bold", color="#c62828", va="bottom", ha="left", bbox=dict(boxstyle="round,pad=0.4", facecolor="#ffffff", edgecolor="#e57373", alpha=0.95), zorder=5)
+
+        ax.annotate(
+            f" [ AJUSTE ÓTIMO ] (Níveis de Decisão)\n Melhor max_depth = {best_param_str}\n RMSE Validação ≈ R$ {min_val_rmse:,.0f} ".replace(",", "."),
+            xy=(best_param, min_val_rmse),
+            xytext=(best_param, min_val_rmse + y_range * 0.12),
+            fontsize=9,
+            fontweight="bold",
+            color="#1b5e20",
+            ha="center",
+            arrowprops=dict(facecolor="#2e7d32", shrink=0.08, width=1.5, headwidth=6),
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="#ffffff", edgecolor="#2e7d32", linewidth=1.5, alpha=0.95),
+            zorder=6,
         )
+
+        if len(x) > 1 and min_val_idx < len(x) - 1:
+            ax.text(x[-1], (y_tr[-1] + y_val[-1]) / 2.0, " [ OVERFITTING ] \n (Árvore Profunda / Memorização) ", fontsize=9, fontweight="bold", color="#f57f17", va="center", ha="right", bbox=dict(boxstyle="round,pad=0.4", facecolor="#ffffff", edgecolor="#fbc02d", alpha=0.95), zorder=5)
+
+        ax.set_title(f"{self.nome} — Diagnóstico Preditivo (Profundidade da Árvore)", fontsize=13.5, fontweight="bold", pad=15)
+        ax.set_xlabel(f"{param_name} (Profundidade Máxima da Árvore)", fontsize=10.5, fontweight="bold", labelpad=10)
+        ax.set_ylabel("Erro Preditivo (RMSE em R$)", fontsize=10.5, fontweight="bold", labelpad=10)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda val, loc: f"R$ {val:,.0f}".replace(",", ".")))
+        ax.legend(loc="upper right", frameon=True, facecolor="white", framealpha=0.95, fontsize=8.5, labelspacing=0.4)
+        ax.grid(True, linestyle="--", alpha=0.5)
+        fig.tight_layout()
+        return fig
 
     @override
     def realizar_grid_search(
@@ -264,6 +354,78 @@ class ArvoreDecisaoEstrategia(
             "y_sample": y_sample,
         }
 
+    def plotar_importancia_atributos(self) -> plt.Figure | None:
+        """Gera um gráfico de barras horizontais rico e legível com a importância dos atributos (Feature Importances)."""
+        if not hasattr(self.__modelo, "feature_importances_") or len(self.__colunas) == 0:
+            return None
+
+        importancias = self.__modelo.feature_importances_
+        if np.sum(importancias) == 0:
+            return None
+
+        # Ordena da maior para a menor importância
+        indices = np.argsort(importancias)
+        colunas_ord = [self.__colunas[i].replace("_", " ") for i in indices]
+        importancias_ord = importancias[indices]
+        porcentagens_ord = importancias_ord * 100.0
+
+        plt.style.use("seaborn-v0_8-whitegrid")
+        fig, ax = plt.subplots(figsize=(12, max(6, len(self.__colunas) * 0.45)), dpi=300)
+
+        # Paleta de cores em gradiente Teal/Verde Esmeralda
+        colors = plt.cm.viridis(np.linspace(0.3, 0.85, len(importancias_ord)))
+
+        bars = ax.barh(colunas_ord, porcentagens_ord, color=colors, edgecolor="#1b5e20", linewidth=1.2, height=0.65)
+
+        # Adiciona rótulos numéricos com porcentagem nas extremidades das barras
+        max_val = max(porcentagens_ord) if len(porcentagens_ord) > 0 else 1.0
+        for bar, pct, val in zip(bars, porcentagens_ord, importancias_ord):
+            if pct > 0.05:
+                ax.text(
+                    pct + max_val * 0.015,
+                    bar.get_y() + bar.get_height() / 2.0,
+                    f"{pct:.2f}% ({val:.4f})",
+                    va="center",
+                    ha="left",
+                    fontsize=9.5,
+                    fontweight="bold",
+                    color="#263238",
+                )
+
+        # Destaque para o atributo mais relevante (Top 1 Predictor)
+        top_idx = len(importancias_ord) - 1
+        top_feature = colunas_ord[top_idx]
+        top_pct = porcentagens_ord[top_idx]
+
+        offset_y = -0.5 if top_idx >= 2 else 0.0
+        ax.annotate(
+            f" [ PRINCIPAL ATRIBUTO ] \n {top_feature}: {top_pct:.2f}% de Impacto ",
+            xy=(top_pct, top_idx),
+            xytext=(top_pct * 0.65, top_idx + offset_y),
+            fontsize=9.5,
+            fontweight="bold",
+            color="#1b5e20",
+            ha="right",
+            arrowprops=dict(facecolor="#2e7d32", shrink=0.08, width=1.5, headwidth=6),
+            bbox=dict(boxstyle="round,pad=0.5", facecolor="#e8f5e9", edgecolor="#2e7d32", linewidth=1.5, alpha=0.95),
+            zorder=6,
+        )
+
+        ax.set_title(
+            f"{self.nome} — Importância Relativa dos Atributos (Feature Importances)",
+            fontsize=13.5,
+            fontweight="bold",
+            pad=15,
+        )
+        ax.set_xlabel("Importância Relativa (%) — Redução de Impureza (Gini / MSE)", fontsize=10.5, fontweight="bold", labelpad=10)
+        ax.set_ylabel("Atributos do Imóvel", fontsize=10.5, fontweight="bold", labelpad=10)
+        ax.set_xlim(0, max_val * 1.30)
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda val, loc: f"{val:.1f}%"))
+        ax.grid(True, linestyle="--", alpha=0.5, axis="x")
+        fig.tight_layout()
+
+        return fig
+
     @override
     def obter_resultados(
         self, x_test: pd.DataFrame, y_test: pd.Series
@@ -291,11 +453,47 @@ class ArvoreDecisaoEstrategia(
         )
 
         importancias_dict = {}
-        if hasattr(self.__modelo, "feature_importances_"):
+        if hasattr(self.__modelo, "feature_importances_") and len(self.__colunas) > 0:
             importancias_dict = {
                 col: round(float(imp), 4)
                 for col, imp in zip(self.__colunas, self.__modelo.feature_importances_)
             }
+
+        profundidade_arvore = (
+            int(self.__modelo.get_depth())
+            if hasattr(self.__modelo, "get_depth")
+            else 0
+        )
+        numero_folhas = (
+            int(self.__modelo.get_n_leaves())
+            if hasattr(self.__modelo, "get_n_leaves")
+            else 0
+        )
+        numero_nos = (
+            int(self.__modelo.tree_.node_count)
+            if hasattr(self.__modelo, "tree_")
+            else 0
+        )
+
+        regras = ""
+        if hasattr(self.__modelo, "tree_") and len(self.__colunas) > 0:
+            try:
+                regras = export_text(
+                    self.__modelo,
+                    feature_names=self.__colunas,
+                    max_depth=3,
+                    show_weights=True,
+                )
+            except Exception:
+                regras = ""
+
+        equacao_geral = (
+            f"Árvore de Decisão Regressora (Profundidade={profundidade_arvore}, "
+            f"Nós={numero_nos}, Folhas={numero_folhas})"
+        )
+
+        fig_importancia = self.plotar_importancia_atributos()
+        fig_diagrama = self.plotar_diagrama_arvore()
 
         return {
             "max_depth_range": self.__param_range.tolist(),
@@ -309,5 +507,48 @@ class ArvoreDecisaoEstrategia(
             "preco_medio_real": round(float(np.mean(y_test_arr)), 2),
             "preco_medio_previsto": round(float(np.mean(y_pred_arr)), 2),
             "n_amostras": int(len(y_test_arr)),
+            "profundidade_arvore": profundidade_arvore,
+            "numero_folhas": numero_folhas,
+            "numero_nos": numero_nos,
+            "feature_importances": importancias_dict,
             "importancia_atributos": importancias_dict,
+            "figura_importancia_atributos": fig_importancia,
+            "figura_diagrama_arvore": fig_diagrama,
+            "criterio_divisao": str(getattr(self.__modelo, "criterion", "squared_error")),
+            "estrategia_divisao": str(getattr(self.__modelo, "splitter", "best")),
+            "amostras_minimas_divisao": getattr(self.__modelo, "min_samples_split", 2),
+            "amostras_minimas_folha": getattr(self.__modelo, "min_samples_leaf", 1),
+            "fracao_peso_minimo_folha": float(getattr(self.__modelo, "min_weight_fraction_leaf", 0.0)),
+            "max_features": str(getattr(self.__modelo, "max_features", "None")),
+            "max_leaf_nodes": str(getattr(self.__modelo, "max_leaf_nodes", "None")),
+            "min_impurity_decrease": float(getattr(self.__modelo, "min_impurity_decrease", 0.0)),
+            "ccp_alpha": round(float(getattr(self.__modelo, "ccp_alpha", 0.0)), 4),
+            "equacao_geral": equacao_geral,
+            "regras_arvore": regras,
         }
+
+    def plotar_diagrama_arvore(self) -> plt.Figure | None:
+        """Gera a figura visual da estrutura hierárquica da Árvore de Decisão utilizando plot_tree."""
+        if not hasattr(self.__modelo, "tree_") or len(self.__colunas) == 0:
+            return None
+
+        plt.style.use("default")
+        fig, ax = plt.subplots(figsize=(24, 12), dpi=300)
+        plot_tree(
+            self.__modelo,
+            feature_names=self.__colunas,
+            filled=True,
+            rounded=True,
+            precision=2,
+            fontsize=8,
+            max_depth=3,
+            ax=ax,
+        )
+        ax.set_title(
+            f"{self.nome} — Diagrama Estrutural dos Nós de Decisão (Profundidade <= 3)",
+            fontsize=14,
+            fontweight="bold",
+            pad=15,
+        )
+        fig.tight_layout()
+        return fig

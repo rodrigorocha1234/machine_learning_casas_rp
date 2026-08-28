@@ -1,3 +1,4 @@
+from io import BytesIO
 import logging
 import os
 import re
@@ -7,6 +8,7 @@ import matplotlib.pyplot as plt
 import mlflow
 import mlflow.sklearn
 from mlflow.models import infer_signature
+from PIL import Image
 
 from src_mh.observadores.iobservador_ml import IObservadorML
 
@@ -165,7 +167,12 @@ class MLflowObservador(IObservadorML):
             elif isinstance(valor, bool):
                 mlflow.log_param(chave_san, str(valor))
 
-            elif isinstance(valor, dict) and ("intercepto" in chave.lower() or "coef" in chave.lower()):
+            elif isinstance(valor, dict) and (
+                "intercepto" in chave.lower()
+                or "coef" in chave.lower()
+                or "importan" in chave.lower()
+                or "feature" in chave.lower()
+            ):
                 linhas_txt = [f"{k}: {v}" for k, v in valor.items()]
                 conteudo_txt = "\n".join(linhas_txt)
                 nome_txt = f"{chave_san}_{prefixo}.txt" if prefixo else f"{chave_san}.txt"
@@ -179,14 +186,31 @@ class MLflowObservador(IObservadorML):
                             mlflow.log_metric(chave_san, float(v), step=idx + 1)
 
             elif isinstance(valor, plt.Figure):
+                if "diagrama" in chave_san.lower() or "tree" in chave_san.lower():
+                    nome_fig = f"diagrama_arvore_decisao_{prefixo}.png" if prefixo else "diagrama_arvore_decisao.png"
+                elif "importan" in chave_san.lower() or "feature" in chave_san.lower():
+                    nome_fig = f"importancia_atributos_{prefixo}.png" if prefixo else "importancia_atributos.png"
+                elif "under" in chave_san.lower() or "over" in chave_san.lower():
+                    nome_fig = f"under_over_{prefixo}_{chave_san}.png" if prefixo else f"under_over_{chave_san}.png"
+                else:
+                    nome_fig = f"{chave_san}_{prefixo}.png" if prefixo else f"{chave_san}.png"
+
+                buf = BytesIO()
+                valor.savefig(buf, format="png", dpi=300)
+                buf.seek(0)
+                img = Image.open(buf)
+                mlflow.log_image(img, nome_fig)
+                plt.close(valor)
+                logger.info("Figura registrada no MLflow via mlflow.log_image: '%s'", nome_fig)
+
+            elif isinstance(valor, Image.Image):
                 nome_fig = (
                     f"under_over_{prefixo}_{chave_san}.png"
                     if prefixo
                     else f"fig_{chave_san}.png"
                 )
-                mlflow.log_figure(valor, nome_fig)
-                plt.close(valor)
-                logger.info("Figura Matplotlib '%s' registrada no MLflow.", nome_fig)
+                mlflow.log_image(valor, nome_fig)
+                logger.info("Imagem PIL registrada no MLflow via mlflow.log_image: '%s'", nome_fig)
 
     def __registrar_modelo_no_registry(
         self, prefixo: str, metricas: dict
