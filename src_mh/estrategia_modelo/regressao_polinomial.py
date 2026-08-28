@@ -135,14 +135,81 @@ class RegressaoPolinomialEstrategia(
         }
 
     @override
-    def gerar_figura_underfit_overfit(
+    def _plotar_diagnostico_overfitting_underfitting(
         self, dados: dict[str, Any]
     ) -> plt.Figure | None:
-        """Gera a figura de Diagnóstico de Overfitting vs Underfitting no padrão gráfico da classe base."""
-        return self._plotar_diagnostico_overfitting_underfitting(
-            dados=dados,
-            nome_artefato_mlflow="under_over_polinomial.png",
+        """Gera a figura Matplotlib com as particularidades da Regressão Polinomial (poly__degree)."""
+        if not dados:
+            return None
+
+        param_name = dados.get("param_name", "poly__degree")
+        param_range = dados.get("degree_range") or dados.get("param_range", [])
+        train_rmse = dados.get("train_rmse") or dados.get("train_scores_mean", [])
+        val_rmse = dados.get("val_rmse") or dados.get("test_scores_mean", [])
+
+        if not param_range or not train_rmse or not val_rmse:
+            return None
+
+        x = [float(p) for p in param_range]
+        y_tr = [float(v) for v in train_rmse]
+        y_val = [float(v) for v in val_rmse]
+
+        plt.style.use("seaborn-v0_8-whitegrid")
+        fig, ax = plt.subplots(figsize=(13, 7.5), dpi=300)
+
+        y_min = min(min(y_tr), min(y_val))
+        y_max = max(max(y_tr), max(y_val))
+        y_range = y_max - y_min
+        ax.set_ylim(y_min - y_range * 0.08, y_max + y_range * 0.28)
+
+        ax.plot(x, y_tr, "-o", color="#1f77b4", linewidth=2.5, markersize=7, label="RMSE Treino (Viés Polinomial)", zorder=4)
+        ax.plot(x, y_val, "-o", color="#ff7f0e", linewidth=2.5, markersize=7, label="RMSE Validação (Generalização)", zorder=4)
+        ax.fill_between(x, y_tr, y_val, color="#1f77b4", alpha=0.15, label="Gap Treino × Validação (Variância)", zorder=2)
+
+        min_val_idx = int(np.argmin(y_val))
+        best_param = x[min_val_idx]
+        min_val_rmse = y_val[min_val_idx]
+        best_param_str = f"{int(best_param)}" if isinstance(best_param, float) and best_param.is_integer() else f"{best_param}"
+
+        if len(x) > 1:
+            x_opt_start = x[max(0, min_val_idx - 1)] if min_val_idx > 0 else x[0]
+            x_opt_end = x[min(len(x) - 1, min_val_idx + 1)] if min_val_idx < len(x) - 1 else x[-1]
+            if min_val_idx > 0:
+                ax.axvspan(x[0], x_opt_start, color="#ffebee", alpha=0.4, label="Região de Underfitting (Reta Rígida / Grau 1)", zorder=1)
+            ax.axvspan(x_opt_start, x_opt_end, color="#e8f5e9", alpha=0.5, label="Região de Ajuste Ótimo Polinomial", zorder=1)
+            if min_val_idx < len(x) - 1:
+                ax.axvspan(x_opt_end, x[-1], color="#fff8e1", alpha=0.4, label="Região de Overfitting (Grau Elevado / Oscilação)", zorder=1)
+
+        ax.axvline(best_param, color="#2e7d32", linestyle="--", linewidth=2.2, label=f"Melhor grau = {best_param_str}", zorder=4)
+        ax.plot(best_param, min_val_rmse, "o", color="#ff7f0e", markeredgecolor="#2e7d32", markeredgewidth=2.5, markersize=12, zorder=6)
+
+        if min_val_idx > 0:
+            ax.text(x[0], y_val[0] + y_range * 0.08, " [ UNDERFITTING ] \n (Grau Linear / Hipótese Rígida) ", fontsize=9, fontweight="bold", color="#c62828", va="bottom", ha="left", bbox=dict(boxstyle="round,pad=0.4", facecolor="#ffffff", edgecolor="#e57373", alpha=0.95), zorder=5)
+
+        ax.annotate(
+            f" [ AJUSTE ÓTIMO ] (Curvatura das Variáveis)\n Melhor grau = {best_param_str}\n RMSE Validação ≈ R$ {min_val_rmse:,.0f} ".replace(",", "."),
+            xy=(best_param, min_val_rmse),
+            xytext=(best_param, min_val_rmse + y_range * 0.12),
+            fontsize=9,
+            fontweight="bold",
+            color="#1b5e20",
+            ha="center",
+            arrowprops=dict(facecolor="#2e7d32", shrink=0.08, width=1.5, headwidth=6),
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="#ffffff", edgecolor="#2e7d32", linewidth=1.5, alpha=0.95),
+            zorder=6,
         )
+
+        if len(x) > 1 and min_val_idx < len(x) - 1:
+            ax.text(x[-1], (y_tr[-1] + y_val[-1]) / 2.0, " [ OVERFITTING ] \n (Grau Elevado / Oscilação) ", fontsize=9, fontweight="bold", color="#f57f17", va="center", ha="right", bbox=dict(boxstyle="round,pad=0.4", facecolor="#ffffff", edgecolor="#fbc02d", alpha=0.95), zorder=5)
+
+        ax.set_title(f"{self.nome} — Diagnóstico Preditivo (Grau Polinomial)", fontsize=13.5, fontweight="bold", pad=15)
+        ax.set_xlabel(f"{param_name} (Grau de Curvatura do Polinômio)", fontsize=10.5, fontweight="bold", labelpad=10)
+        ax.set_ylabel("Erro Preditivo (RMSE em R$)", fontsize=10.5, fontweight="bold", labelpad=10)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda val, loc: f"R$ {val:,.0f}".replace(",", ".")))
+        ax.legend(loc="upper right", frameon=True, facecolor="white", framealpha=0.95, fontsize=8.5, labelspacing=0.4)
+        ax.grid(True, linestyle="--", alpha=0.5)
+        fig.tight_layout()
+        return fig
 
     @override
     def realizar_grid_search(

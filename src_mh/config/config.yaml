@@ -19,7 +19,8 @@ treinamento_simples:
   regressao_lasso:
     alpha: 1.0
     fit_intercept: true
-    max_iter: 2000
+    max_iter: 15000
+    tol: 0.001
     cv_folds: 5
     scoring: "neg_root_mean_squared_error"
     n_jobs: 4
@@ -28,7 +29,8 @@ treinamento_simples:
     alpha: 1.0
     l1_ratio: 0.5
     fit_intercept: true
-    max_iter: 2000
+    max_iter: 15000
+    tol: 0.001
     cv_folds: 5
     scoring: "neg_root_mean_squared_error"
     n_jobs: 4

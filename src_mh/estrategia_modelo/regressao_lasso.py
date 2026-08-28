@@ -38,7 +38,9 @@ class RegressaoLassoEstrategia(
         self.__params = params or {
             "alpha": getattr(Config, "alpha_lasso", 1.0),
             "fit_intercept": getattr(Config, "fit_intercept_lasso", True),
-            "max_iter": getattr(Config, "max_iter_lasso", 2000),
+            "max_iter": getattr(Config, "max_iter_lasso", 15000),
+            "tol": getattr(Config, "tol_lasso", 0.001),
+            "random_state": 42,
         }
         self.__modelo = Lasso(**self.__params)
         self.__colunas: list[str] = []
@@ -106,7 +108,12 @@ class RegressaoLassoEstrategia(
     ) -> dict[str, object]:
         """Calcula as pontuações da curva de validação variando alpha."""
         train_scores, test_scores = validation_curve(
-            Lasso(fit_intercept=self.__modelo.fit_intercept, max_iter=2000),
+            Lasso(
+                fit_intercept=self.__modelo.fit_intercept,
+                max_iter=getattr(Config, "max_iter_lasso", 15000),
+                tol=getattr(Config, "tol_lasso", 0.001),
+                random_state=42,
+            ),
             x,
             y,
             param_name="alpha",
@@ -129,12 +136,79 @@ class RegressaoLassoEstrategia(
         }
 
     @override
-    def gerar_figura_underfit_overfit(self, dados: dict[str, Any]) -> plt.Figure | None:
-        """Gera a figura de Diagnóstico de Overfitting vs Underfitting no padrão gráfico da classe base."""
-        return self._plotar_diagnostico_overfitting_underfitting(
-            dados=dados,
-            nome_artefato_mlflow="under_over_lasso.png",
+    def _plotar_diagnostico_overfitting_underfitting(
+        self, dados: dict[str, Any]
+    ) -> plt.Figure | None:
+        """Gera a figura Matplotlib com as particularidades da Regressão Lasso (Penalização L1 / Zeramento de Coeficientes)."""
+        if not dados:
+            return None
+
+        param_name = dados.get("param_name", "alpha")
+        param_range = dados.get("alpha_range") or dados.get("param_range", [])
+        train_rmse = dados.get("train_rmse") or dados.get("train_scores_mean", [])
+        val_rmse = dados.get("val_rmse") or dados.get("test_scores_mean", [])
+
+        if not param_range or not train_rmse or not val_rmse:
+            return None
+
+        x = [float(p) for p in param_range]
+        y_tr = [float(v) for v in train_rmse]
+        y_val = [float(v) for v in val_rmse]
+
+        plt.style.use("seaborn-v0_8-whitegrid")
+        fig, ax = plt.subplots(figsize=(13, 7.5), dpi=300)
+        if min(x) > 0:
+            ax.set_xscale("log")
+
+        y_min = min(min(y_tr), min(y_val))
+        y_max = max(max(y_tr), max(y_val))
+        y_range = y_max - y_min
+        ax.set_ylim(y_min - y_range * 0.08, y_max + y_range * 0.28)
+
+        ax.plot(x, y_tr, "-o", color="#1f77b4", linewidth=2.5, markersize=7, label="RMSE Treino (Viés L1)", zorder=4)
+        ax.plot(x, y_val, "-o", color="#ff7f0e", linewidth=2.5, markersize=7, label="RMSE Validação (Generalização)", zorder=4)
+        ax.fill_between(x, y_tr, y_val, color="#1f77b4", alpha=0.15, label="Gap Treino × Validação (Variância)", zorder=2)
+
+        min_val_idx = int(np.argmin(y_val))
+        best_param = x[min_val_idx]
+        min_val_rmse = y_val[min_val_idx]
+        best_param_str = f"{best_param:.4f}" if best_param < 0.01 else f"{best_param:.2f}"
+
+        if len(x) > 1:
+            x_opt_start = x[max(0, min_val_idx - 1)] if min_val_idx > 0 else x[0]
+            x_opt_end = x[min(len(x) - 1, min_val_idx + 1)] if min_val_idx < len(x) - 1 else x[-1]
+            if min_val_idx > 0:
+                ax.axvspan(x[0], x_opt_start, color="#fff8e1", alpha=0.4, label="Região de Overfitting (Sem Penalização L1)", zorder=1)
+            ax.axvspan(x_opt_start, x_opt_end, color="#e8f5e9", alpha=0.5, label="Região de Ajuste Ótimo Lasso", zorder=1)
+            if min_val_idx < len(x) - 1:
+                ax.axvspan(x_opt_end, x[-1], color="#ffebee", alpha=0.4, label="Região de Underfitting (Zeramento Excessivo L1)", zorder=1)
+
+        ax.axvline(best_param, color="#2e7d32", linestyle="--", linewidth=2.2, label=f"Melhor alpha L1 = {best_param_str}", zorder=4)
+        ax.plot(best_param, min_val_rmse, "o", color="#ff7f0e", markeredgecolor="#2e7d32", markeredgewidth=2.5, markersize=12, zorder=6)
+
+        ax.text(x[0], y_tr[0] + y_range * 0.15, " [ OVERFITTING ] \n (Sem Penalização L1 / Coeficientes Livres) ", fontsize=9, fontweight="bold", color="#f57f17", va="bottom", ha="left", bbox=dict(boxstyle="round,pad=0.4", facecolor="#ffffff", edgecolor="#fbc02d", alpha=0.95), zorder=5)
+        ax.annotate(
+            f" [ AJUSTE ÓTIMO ] (Penalização L1 - Seleção)\n Melhor alpha = {best_param_str}\n RMSE Validação ≈ R$ {min_val_rmse:,.0f} ".replace(",", "."),
+            xy=(best_param, min_val_rmse),
+            xytext=(best_param * 0.04, min_val_rmse + y_range * 0.10),
+            fontsize=9,
+            fontweight="bold",
+            color="#1b5e20",
+            ha="center",
+            arrowprops=dict(facecolor="#2e7d32", shrink=0.08, width=1.5, headwidth=6),
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="#ffffff", edgecolor="#2e7d32", linewidth=1.5, alpha=0.95),
+            zorder=6,
         )
+        ax.text(x[-1], y_tr[-1] + y_range * 0.08, " [ UNDERFITTING ] \n (Penalização L1 Excessiva / Atributos Zerados) ", fontsize=9, fontweight="bold", color="#c62828", va="bottom", ha="right", bbox=dict(boxstyle="round,pad=0.4", facecolor="#ffffff", edgecolor="#e57373", alpha=0.95), zorder=5)
+
+        ax.set_title(f"{self.nome} — Diagnóstico Preditivo (Penalização L1 - Lasso)", fontsize=13.5, fontweight="bold", pad=15)
+        ax.set_xlabel(f"{param_name} (Fator de Penalização L1 — Escala Logarítmica)", fontsize=10.5, fontweight="bold", labelpad=10)
+        ax.set_ylabel("Erro Preditivo (RMSE em R$)", fontsize=10.5, fontweight="bold", labelpad=10)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda val, loc: f"R$ {val:,.0f}".replace(",", ".")))
+        ax.legend(loc="upper right", frameon=True, facecolor="white", framealpha=0.95, fontsize=8.5, labelspacing=0.4)
+        ax.grid(True, linestyle="--", alpha=0.5)
+        fig.tight_layout()
+        return fig
 
     @override
     def realizar_grid_search(

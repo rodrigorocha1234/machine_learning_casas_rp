@@ -55,7 +55,8 @@ class Config:
         treinamento_simples_lasso = config.get('treinamento_simples', {}).get('regressao_lasso', {})
         alpha_lasso = treinamento_simples_lasso.get('alpha', 1.0)
         fit_intercept_lasso = treinamento_simples_lasso.get('fit_intercept', True)
-        max_iter_lasso = treinamento_simples_lasso.get('max_iter', 2000)
+        max_iter_lasso = treinamento_simples_lasso.get('max_iter', 15000)
+        tol_lasso = treinamento_simples_lasso.get('tol', 0.001)
 
         turing_parametros_lasso = config.get('turing_parametros', {}).get('regressao_lasso', {})
         alpha_lasso_turing = turing_parametros_lasso.get('alpha', [0.01, 0.1, 1.0, 10.0, 100.0])
@@ -71,7 +72,8 @@ class Config:
         alpha_elasticnet = treinamento_simples_en.get('alpha', 1.0)
         l1_ratio_elasticnet = treinamento_simples_en.get('l1_ratio', 0.5)
         fit_intercept_elasticnet = treinamento_simples_en.get('fit_intercept', True)
-        max_iter_elasticnet = treinamento_simples_en.get('max_iter', 2000)
+        max_iter_elasticnet = treinamento_simples_en.get('max_iter', 15000)
+        tol_elasticnet = treinamento_simples_en.get('tol', 0.001)
 
         turing_parametros_en = config.get('turing_parametros', {}).get('regressao_elasticnet', {})
         alpha_elasticnet_turing = turing_parametros_en.get('alpha', [0.01, 0.1, 1.0, 10.0, 100.0])
