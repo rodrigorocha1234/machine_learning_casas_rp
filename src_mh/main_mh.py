@@ -14,6 +14,7 @@ from src_mh.estrategia_modelo.regressao_ridge import RegressaoRidgeEstrategia
 from src_mh.estrategia_modelo.regressao_lasso import RegressaoLassoEstrategia
 from src_mh.estrategia_modelo.regressao_elasticnet import RegressaoElasticNetEstrategia
 from src_mh.estrategia_modelo.arvore_decisao import ArvoreDecisaoEstrategia
+from src_mh.estrategia_modelo.random_forest import RandomForestEstrategia
 from src_mh.observadores.console_observador import ConsoleObservador
 from src_mh.observadores.iobservador_ml import IObservadorML
 from src_mh.observadores.mlflow_observador import MLflowObservador
@@ -361,6 +362,13 @@ if __name__ == "__main__":
         'fit_intercept': Config.fit_intercept_rp,
         'positive': Config.positive_rp,
     })
+    modelo_random_forest = RandomForestEstrategia(params={
+        'n_estimators': Config.n_estimators_rf,
+        'max_depth': Config.max_depth_rf,
+        'min_samples_split': Config.min_samples_split_rf,
+        'min_samples_leaf': Config.min_samples_leaf_rf,
+        'random_state': 42,
+    })
 
     mlflow_obs = MLflowObservador(
         tracking_uri=Config.tracking_uri,
@@ -378,7 +386,8 @@ if __name__ == "__main__":
             modelo_regressao_lasso,
             modelo_regressao_elasticnet,
             modelo_arvore_decisao,
-            modelo_regressao_polinomial
+            modelo_regressao_polinomial,
+            modelo_random_forest,
         ],
         observadores=[console_obs, mlflow_obs],
     )

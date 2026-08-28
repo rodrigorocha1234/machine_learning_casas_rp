@@ -121,3 +121,22 @@ class Config:
         include_bias_rp_vl = validacao_cruzada_rp.get('include_bias', False)
         fit_intercept_rp_vl = validacao_cruzada_rp.get('fit_intercept', True)
         positive_rp_vl = validacao_cruzada_rp.get('positive', False)
+
+        # Random Forest - Treinamento Simples, Tuning e Validação Cruzada
+        treinamento_simples_rf = config.get('treinamento_simples', {}).get('random_forest', {})
+        n_estimators_rf = treinamento_simples_rf.get('n_estimators', 100)
+        max_depth_rf = treinamento_simples_rf.get('max_depth', 10)
+        min_samples_split_rf = treinamento_simples_rf.get('min_samples_split', 5)
+        min_samples_leaf_rf = treinamento_simples_rf.get('min_samples_leaf', 2)
+
+        turing_parametros_rf = config.get('turing_parametros', {}).get('random_forest', {})
+        n_estimators_rf_turing = turing_parametros_rf.get('n_estimators', [50, 100, 200])
+        max_depth_rf_turing = turing_parametros_rf.get('max_depth', [5, 10, 15, None])
+        min_samples_split_rf_turing = turing_parametros_rf.get('min_samples_split', [2, 5, 10])
+        min_samples_leaf_rf_turing = turing_parametros_rf.get('min_samples_leaf', [1, 2, 4])
+
+        validacao_cruzada_rf = config.get('validacao_cruzada', {}).get('random_forest', {})
+        n_estimators_rf_vl = validacao_cruzada_rf.get('n_estimators', 100)
+        max_depth_rf_vl = validacao_cruzada_rf.get('max_depth', 10)
+        min_samples_split_rf_vl = validacao_cruzada_rf.get('min_samples_split', 5)
+        min_samples_leaf_rf_vl = validacao_cruzada_rf.get('min_samples_leaf', 2)

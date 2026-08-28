@@ -52,6 +52,15 @@ treinamento_simples:
     scoring: "neg_root_mean_squared_error"
     n_jobs: 4
     random_state: 42
+  random_forest:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 5
+    min_samples_leaf: 2
+    random_state: 42
+    cv_folds: 5
+    scoring: "neg_root_mean_squared_error"
+    n_jobs: 4
 
 turing_parametros:
   regressao_linear:
@@ -77,6 +86,11 @@ turing_parametros:
     poly__degree: [1, 2, 3]
     regressor__fit_intercept: [True, False]
     regressor__positive: [True, False]
+  random_forest:
+    n_estimators: [50, 100, 200]
+    max_depth: [5, 10, 15, None]
+    min_samples_split: [2, 5, 10]
+    min_samples_leaf: [1, 2, 4]
 
 validacao_cruzada:
   regressao_linear:
@@ -101,6 +115,11 @@ validacao_cruzada:
     include_bias: False
     fit_intercept: True
     positive: False
+  random_forest:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 5
+    min_samples_leaf: 2
 
 carregador_dados:
   colunas:
