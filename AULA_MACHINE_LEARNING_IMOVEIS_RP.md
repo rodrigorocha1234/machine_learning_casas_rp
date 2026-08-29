@@ -364,6 +364,42 @@ Z. Norte │ █████████████ R$ 220.552                 
 | **Crédito Imobiliário & Laudos de Avaliação Bancária** | **Regressão SVR** | Margem de suporte que reduz drasticamente o risco de inadimplência por *outliers*. |
 | **Ferramenta de Apoio ao Corretor / Explicação ao Cliente Final** | **Árvore de Decisão** | Regras hierárquicas claras (ex: *"Se Banheiros > 2 e Metragem > 80m² na Zona Sul..."*). |
 | **Simulador de Investimentos & Análise de Sensibilidade Marginal** | **Regressão Linear / Ridge** | Coeficientes diretos (ex: *cada vaga extra adiciona exatamente R$ 243.237 ao valor base*). |
+| **Comitê de Risco Máximo (Grandes Portfólios e Carteiras)** | **Voting Regressor (Ensemble)** | Combinação dos 4 melhores modelos para anular pontos cegos individuais. |
+
+---
+
+### 6.1. O Super-Modelo por Votação (Ensemble Voting): A Junta de Corretores Peritos
+
+Na prática comercial de alto padrão em Ribeirão Preto, quando um fundo imobiliário ou banco precisa precificar um portfólio de centenas de milhões de reais, **nunca se confia na opinião de 1 único perito avaliador**. Em vez disso, convoca-se uma **Junta de Corretores Especialistas**.
+
+No ecossistema de Machine Learning, as **Técnicas de Votação (*Voting Ensembles*)** simulam matematicamente essa mesa de arbitragem:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                   MAPA DE TÉCNICAS DE VOTAÇÃO PARA TOMADA DE DECISÃO                             │
+├─────────────────────────┬──────────────────────────────────┬─────────────────────────────────────┤
+│ TIPO DE VOTAÇÃO         │ COMO FUNCIONA NA PRÁTICA         │ ANALOGIA IMOBILIÁRIA                │
+├─────────────────────────┼──────────────────────────────────┼─────────────────────────────────────┤
+│ 1. Média Simples        │ Média aritmética de todos os     │ Todos os 4 corretores têm o mesmo   │
+│    (Simple Average)     │ modelos selecionados.            │ peso no laudo final.                │
+├─────────────────────────┼──────────────────────────────────┼─────────────────────────────────────┤
+│ 2. Votação Ponderada    │ Modelos com menor erro histórico │ O corretor campeão (LightGBM) tem   │
+│    (Weighted Voting)    │ recebem maior peso no cálculo.   │ peso 40%, o SVR tem 30%, etc.       │
+├─────────────────────────┼──────────────────────────────────┼─────────────────────────────────────┤
+│ 3. Mediana Robusta      │ Escolhe o valor central dentre   │ Se um corretor chutar R$ 5 milhões  │
+│    (Median Voting)      │ todas as previsões do comitê.    │ por engano, seu laudo é ignorado.   │
+├─────────────────────────┼──────────────────────────────────┼─────────────────────────────────────┤
+│ 4. Média Truncada       │ Descarta a menor e a maior       │ Elimina o corretor pessimista e o   │
+│    (Trimmed Mean)       │ previsão e calcula a média.      │ otimista, ficando com o centro.     │
+├─────────────────────────┼──────────────────────────────────┼─────────────────────────────────────┤
+│ 5. Meta-Aprendizado     │ Um modelo "juiz" (Meta-Regressor)│ Um diretor executivo experiente que │
+│    (Stacking)           │ aprende a melhor combinação.     │ sabe quando confiar em cada perito. │
+└─────────────────────────┴──────────────────────────────────┴─────────────────────────────────────┘
+```
+
+#### Por que a Votação é a Estratégia Mais Segura para a Empresa?
+1. **Anulação de Pontos Cegos:** Se o LightGBM superestimar um imóvel atípico da Zona Sul, o SVR e o Gradient Boosting puxam a previsão de volta para o valor de mercado real.
+2. **Estabilidade em Momentos de Crise:** Modelos combinados têm uma variância de erro até **40% menor** do que qualquer algoritmo isolado, protegendo a margem líquida do negócio.
 
 ---
 
@@ -383,7 +419,15 @@ Z. Norte │ █████████████ R$ 220.552                 
         │ • LightGBM (Histogram GBDT) │                                 │ • Ridge (L2) / Lasso (L1)   │
         │ • XGBoost (2nd Order Taylor)│                                 │ • SVR (Kernel RBF / Margin) │
         │ • Gradient Boosting (Resid) │                                 │ • Rede Neural MLP (Backprop)│
-        └─────────────────────────────┘                                 └─────────────────────────────┘
+        └──────────────┬──────────────┘                                 └──────────────┬──────────────┘
+                       │                                                               │
+                       └──────────────────────────────┬────────────────────────────────┘
+                                                      ▼
+                                       ┌───────────────────────────────┐
+                                       │ COMITÊ DE VOTAÇÃO & STACKING  │
+                                       │ • VotingRegressor (Média/Peso)│
+                                       │ • StackingRegressor (Meta ML) │
+                                       └───────────────────────────────┘
 ```
 
 ---
@@ -504,7 +548,347 @@ $$\hat{y} = W^{(3)} \mathbf{h}^{(2)} + b^{(3)}$$
 
 ---
 
-## 8. Arquitetura de Software & Padrões de Projeto (GoF)
+## 8. Enciclopédia Completa de Técnicas de Ensemble
+
+Os métodos de **Ensemble** combinam múltiplos modelos de Machine Learning para produzir uma previsão superior e mais resiliente do que qualquer estimador individual.
+
+Abaixo, detalhamos a teoria matemática, diagramas arquiteturais e aplicação prática das **7 principais técnicas de Ensemble**:
+
+---
+
+### 8.1. Voting (Hard Voting — Classificação por Maioria Simples)
+
+No **Hard Voting**, cada modelo do comitê emite um voto categórico para uma classe. A classe que receber a **maioria simples (moda)** dos votos é a vencedora:
+
+$$\hat{y}_{\text{hard}} = \operatorname{mode}\left\{ \hat{C}_1(x), \hat{C}_2(x), \dots, \hat{C}_M(x) \right\} = \arg\max_{c} \sum_{m=1}^{M} \mathbb{I}(\hat{C}_m(x) = c)$$
+
+#### Diagrama de Arquitetura: Hard Voting
+```
+                      ┌────────────────────────────┐
+                      │   DADOS DE ENTRADA (X)     │
+                      │ (Metragem, Bairro, Vagas)  │
+                      └─────────────┬──────────────┘
+                                    │
+             ┌──────────────────────┼──────────────────────┐
+             ▼                      ▼                      ▼
+      ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
+      │   Modelo 1   │       │   Modelo 2   │       │   Modelo 3   │
+      │ (Árvore Dec) │       │ (SVM Linear) │       │ (Regr. Log)  │
+      └──────┬───────┘       └──────┬───────┘       └──────┬───────┘
+             │ "Preço Justo"        │ "Preço Justo"        │ "Sobreavaliado"
+             └──────────────────────┼──────────────────────┘
+                                    ▼
+                      ┌────────────────────────────┐
+                      │    CONTAGEM DE VOTOS       │
+                      │  • "Preço Justo": 2 votos  │
+                      │  • "Sobreavaliado": 1 voto │
+                      └─────────────┬──────────────┘
+                                    ▼
+                      ┌────────────────────────────┐
+                      │ PREVISÃO FINAL:            │
+                      │ "PREÇO JUSTO" (Maioria)    │
+                      └────────────────────────────┘
+```
+
+- **Aplicação Imobiliária:** Classificar se um imóvel à venda é uma *"Oportunidade Abaixo do Mercado"*, *"Preço Justo"* ou *"Imóvel Sobreprecificado"*.
+- **Limitação:** Ignora o grau de certeza ou probabilidade de cada algoritmo.
+
+---
+
+### 8.2. Soft Voting (Votação Suave por Média de Probabilidades)
+
+No **Soft Voting**, os modelos precisam ser capazes de estimar probabilidades calibradas ($P(y=c \mid x)$). A previsão final é a classe que obtém a **maior média aritmética das probabilidades**:
+
+$$\hat{y}_{\text{soft}} = \arg\max_{c} \frac{1}{M} \sum_{m=1}^{M} w_m \cdot P_m(y = c \mid x)$$
+
+#### Diagrama de Arquitetura: Soft Voting
+```
+                      ┌────────────────────────────┐
+                      │   DADOS DE ENTRADA (X)     │
+                      └─────────────┬──────────────┘
+                                    │
+             ┌──────────────────────┼──────────────────────┐
+             ▼                      ▼                      ▼
+      ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
+      │   Modelo 1   │       │   Modelo 2   │       │   Modelo 3   │
+      └──────┬───────┘       └──────┬───────┘       └──────┬───────┘
+             │ P(Oportunidade)=0.90 │ P(Oportunidade)=0.45 │ P(Oportunidade)=0.40
+             │ P(Normal)      =0.10 │ P(Normal)      =0.55 │ P(Normal)      =0.60
+             └──────────────────────┼──────────────────────┘
+                                    ▼
+                      ┌────────────────────────────┐
+                      │   MÉDIA DAS PROBABILIDADES │
+                      │ P(Oportunidade) = 58,3%    │
+                      │ P(Normal)       = 41,7%    │
+                      └─────────────┬──────────────┘
+                                    ▼
+                      ┌────────────────────────────┐
+                      │ PREVISÃO FINAL:            │
+                      │ "OPORTUNIDADE" (58,3%)     │
+                      └────────────────────────────┘
+```
+
+- **Por que o Soft Voting supera o Hard Voting?** No exemplo acima, o Hard Voting escolheria "Normal" (2 votos contra 1). Porém, o Modelo 1 tinha **90% de certeza**, enquanto os Modelos 2 e 3 estavam quase em dúvida (55% e 60%). O Soft Voting pondera a **convicção** de cada modelo.
+
+---
+
+### 8.3. Bagging (Bootstrap Aggregating — Treinamento Paralelo)
+
+O **Bagging** reduz a variância de modelos complexos e instáveis (como árvores profundas):
+1. **Bootstrap:** Gera $B$ subconjuntos de treino com reposição aleatória ($N$ amostras cada). Cerca de $63,2\%$ dos dados entram em cada amostra; os $36,8\%$ restantes formam o conjunto **Out-of-Bag (OOB)** para validação sem custo.
+2. **Treinamento Paralelo:** Treina $B$ estimadores independentes e homogêneos.
+3. **Agregação:** Média (regressão) ou voto majoritário (classificação).
+
+$$\hat{y}_{\text{Bagging}}(x) = \frac{1}{B} \sum_{b=1}^{B} f_b(x)$$
+
+#### Diagrama de Arquitetura: Bagging
+```
+                      ┌────────────────────────────┐
+                      │    DATASET ORIGINAL (N)    │
+                      │   5.682 Imóveis de RP      │
+                      └─────────────┬──────────────┘
+                                    │ Amostragem com Reposição (Bootstrap)
+             ┌──────────────────────┼──────────────────────┐
+             ▼                      ▼                      ▼
+      ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
+      │ Subamostra 1 │       │ Subamostra 2 │       │ Subamostra B │
+      │ (~63% dados) │       │ (~63% dados) │       │ (~63% dados) │
+      └──────┬───────┘       └──────┬───────┘       └──────┬───────┘
+             ▼                      ▼                      ▼
+      ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
+      │  Árvore 1    │       │  Árvore 2    │       │  Árvore B    │
+      │ (Treino //)  │       │ (Treino //)  │       │ (Treino //)  │
+      └──────┬───────┘       └──────┬───────┘       └──────┬───────┘
+             │ ŷ₁                   │ ŷ₂                   │ ŷ_B
+             └──────────────────────┼──────────────────────┘
+                                    ▼
+                      ┌────────────────────────────┐
+                      │   AGREGAÇÃO (MÉDIA / VOTO) │
+                      │    ŷ = 1/B * Σ ŷ_b         │
+                      └─────────────┬──────────────┘
+                                    ▼
+                      ┌────────────────────────────┐
+                      │ PREDIÇÃO ESTÁVEL (BAIXA    │
+                      │ VARIÂNCIA / SEM OVERFIT)   │
+                      └────────────────────────────┘
+```
+
+- **Exemplo Clássico:** **Random Forest** (que adiciona ainda a descorrelação de atributos por nó).
+
+---
+
+### 8.4. Voting para Regressão (Média, Ponderada, Mediana e Truncada)
+
+Quando a variável alvo é contínua (ex: Preço do Imóvel em R$), a votação ocorre por **consenso numérico**:
+
+#### Diagrama de Arquitetura: Voting para Regressão
+```
+                      ┌────────────────────────────┐
+                      │   ATRIBUTOS DO IMÓVEL (X)  │
+                      └─────────────┬──────────────┘
+                                    │
+             ┌────────────────┬─────┴──────────┬────────────────┐
+             ▼                ▼                ▼                ▼
+      ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+      │  LightGBM   │  │Random Forest│  │     SVR     │  │GradBoosting │
+      └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+             │ R$ 450.000     │ R$ 460.000     │ R$ 440.000     │ R$ 445.000
+             └────────────────┼────────────────┼────────────────┘
+                              ▼
+        ┌─────────────────────────────────────────────────────────────┐
+        │                 ESTRATÉGIAS DE AGREGAÇÃO                    │
+        │ • Média Simples:   (450k + 460k + 440k + 445k) / 4 = R$ 448.750
+        │ • Média Ponderada: 0.35(450k) + 0.25(460k) + ...   = R$ 449.250
+        │ • Mediana Robusta: mediana(440k, 445k, 450k, 460k) = R$ 447.500
+        │ • Média Truncada:  descarta 440k e 460k -> média   = R$ 447.500
+        └─────────────────────────────┬───────────────────────────────┘
+                                      ▼
+                      ┌────────────────────────────┐
+                      │ PREÇO FINAL AVALIADO (R$)  │
+                      └────────────────────────────┘
+```
+
+1. **Média Simples:** $\hat{y} = \frac{1}{M} \sum_{m=1}^{M} \hat{y}_m$
+2. **Média Ponderada (Gauss-Markov):** $\hat{y} = \sum_{m=1}^{M} w_m \hat{y}_m$, com $w_m = \frac{1/\text{RMSE}_m^2}{\sum 1/\text{RMSE}_k^2}$
+3. **Mediana Robusta:** $\hat{y} = \text{mediana}(\hat{y}_1, \dots, \hat{y}_M)$ *(Ponto de ruptura de 50% contra erros absurdos)*
+4. **Média Truncada:** Descarta o laudo mais alto e o mais baixo e calcula a média dos intermediários.
+
+---
+
+### 8.5. Boosting (Aprendizado Sequencial de Resíduos)
+
+O **Boosting** treina estimadores **em série**. Cada novo modelo aprende a corrigir os erros deixados pelos anteriores, operando uma **drástica redução de viés (*Bias Reduction*)**:
+
+$$F_0(x) = \arg\min_{\gamma} \sum_{i=1}^{n} L(y_i, \gamma)$$
+$$r_{im} = -\left[ \frac{\partial L(y_i, F(x_i))}{\partial F(x_i)} \right]_{F(x) = F_{m-1}(x)}$$
+$$F_m(x) = F_{m-1}(x) + \eta \cdot h_m(x)$$
+
+#### Diagrama de Arquitetura: Boosting
+```
+   ┌─────────────┐     Resíduos r₁     ┌─────────────┐     Resíduos r₂     ┌─────────────┐
+X ─┤  Árvore 1   ├────────────────────►│  Árvore 2   ├────────────────────►│  Árvore 3   │
+   │(Prediz y)   │ (Foca nos erros de 1)│(Aprende r₁) │(Foca nos erros de 2)│(Aprende r₂) │
+   └──────┬──────┘                     └──────┬──────┘                     └──────┬──────┘
+          │ F₁(x)                             │ + η · h₂(x)                       │ + η · h₃(x)
+          └───────────────────────────────────┼───────────────────────────────────┘
+                                              ▼
+                               ┌─────────────────────────────┐
+                               │   PREDIÇÃO FINAL ACUMULADA  │
+                               │ F(x) = F₀ + η·h₁ + η·h₂ +...│
+                               │  (FORTE REDUÇÃO DE VIÉS)    │
+                               └─────────────────────────────┘
+```
+
+- **Família Boosting no Projeto:** `GradientBoostingRegressor`, `XGBoost` e `LightGBM`.
+
+---
+
+### 8.6. Stacking (Stacked Generalization com Out-of-Fold K-Fold)
+
+O **Stacking** treina múltiplos modelos base heterogêneos (Nível 0) e usa suas previsões como novas variáveis (*metacaracterísticas*) para treinar um **Meta-Modelo** (Nível 1).
+
+Para evitar **vazamento de dados (*data leakage*)**, as previsões de treino do Nível 0 **devem ser geradas via Out-of-Fold (OOF) $K$-Fold Cross-Validation**:
+
+#### Diagrama de Arquitetura: Stacking
+```
+                      ┌────────────────────────────┐
+                      │    DATASET DE TREINO (D)   │
+                      └─────────────┬──────────────┘
+                                    │ K-Fold Cross Validation (Out-of-Fold)
+             ┌──────────────────────┼──────────────────────┐
+             ▼                      ▼                      ▼
+      ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
+      │  LightGBM    │       │Random Forest │       │   SVR RBF    │  (NÍVEL 0: MODELOS BASE)
+      └──────┬───────┘       └──────┬───────┘       └──────┬───────┘
+             │ OOF Preds Z₁         │ OOF Preds Z₂         │ OOF Preds Z₃
+             └──────────────────────┼──────────────────────┘
+                                    ▼
+                      ┌────────────────────────────┐
+                      │  MATRIZ DE METACARACTERÍST.│
+                      │   Z = [Z₁, Z₂, Z₃] + y     │
+                      └─────────────┬──────────────┘
+                                    │ Treinamento do Meta-Modelo
+                                    ▼
+                      ┌────────────────────────────┐
+                      │   META-MODELO (NÍVEL 1)    │
+                      │  (Ridge / Linear / Lasso)  │
+                      └─────────────┬──────────────┘
+                                    ▼
+                      ┌────────────────────────────┐
+                      │   PREDIÇÃO COMBINADA ÓTIMA │
+                      └────────────────────────────┘
+```
+
+---
+
+### 8.7. Blending (Meta-Aprendizado com Divisão Holdout)
+
+O **Blending** é uma variante mais simples e computacionalmente mais rápida do Stacking. Em vez de fazer validação cruzada $K$-Fold completa para gerar a matriz de meta-treinamento, o Blending **divide os dados em Treino e Validação (Holdout)**:
+
+1. Divide o conjunto original em: **Treino Base** (ex: 70%) e **Holdout de Validação** (ex: 30%).
+2. Treina os modelos de Nível 0 exclusivamente no conjunto de 70%.
+3. Gera previsões com os modelos de Nível 0 no conjunto de Holdout de 30%.
+4. Treina o Meta-Modelo usando essas previsões do Holdout como features e o $y$ real correspondente como alvo.
+
+#### Diagrama de Arquitetura: Blending
+```
+                      ┌────────────────────────────┐
+                      │    DATASET TOTAL (100%)    │
+                      └─────────────┬──────────────┘
+                                    │ Divisão Holdout
+             ┌──────────────────────┴──────────────────────┐
+             ▼ (ex: 70%)                                   ▼ (ex: 30%)
+      ┌──────────────┐                              ┌──────────────┐
+      │ DADOS TREINO │                              │ DADOS HOLDOUT│
+      └──────┬───────┘                              └──────┬───────┘
+             │ Treina Modelos Base                         │ Predição
+             ▼                                             ▼
+      ┌──────────────┐                              ┌──────────────┐
+      │Modelos Base  ├─────────────────────────────►│ Matriz Z_val │
+      │(LGBM, RF, SVR)                              │(Preds no 30%)│
+      └──────────────┘                              └──────┬───────┘
+                                                           │ Treina Meta-Modelo
+                                                           ▼
+                                                    ┌──────────────┐
+                                                    │ META-MODELO  │
+                                                    │ (Regr. Ridge)│
+                                                    └──────────────┘
+```
+
+#### Comparativo Técnico: Stacking vs Blending
+- **Stacking:** Usa 100% dos dados para treinar os modelos base e o meta-modelo via $K$-Fold. Mais robusto, porém mais lento ($K \times$ mais treinos).
+- **Blending:** Mais simples e muito mais rápido, mas descarta 30% dos dados no treinamento inicial dos modelos base.
+
+---
+
+### 8.8. Cheat Sheet Comparativo de Todas as Técnicas de Ensemble
+
+| Técnica de Ensemble | Tipo de Modelos | Treinamento | Foco Principal | Risco de Overfitting | Complexidade |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Hard Voting** | Heterogêneos | Paralelo | Maioria Simples | Baixo | Mínima |
+| **Soft Voting** | Heterogêneos | Paralelo | Certeza / Probabilidade | Baixo | Baixa |
+| **Bagging (RF)** | Homogêneos (Árvores) | **Paralelo** | **Reduzir Variância** | Muito Baixo | Moderada |
+| **Voting Regressor** | Heterogêneos | Paralelo | Consenso Numérico | Baixo | Baixa |
+| **Boosting (GBM/LGB)**| Homogêneos (Árvores) | **Sequencial** | **Reduzir Viés** | Moderado a Alto | Alta |
+| **Stacking** | Heterogêneos | 2 Níveis ($K$-Fold OOF)| Otimização de Pesos | Baixo (se OOF correto)| Alta |
+| **Blending** | Heterogêneos | 2 Níveis (Holdout) | Otimização Rápida | Baixo | Moderada |
+
+---
+
+### 8.9. Exemplo Prático de Código em Python (Scikit-Learn)
+
+```python
+from sklearn.ensemble import VotingRegressor, StackingRegressor, RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import RidgeCV, Ridge
+from sklearn.svm import SVR
+from sklearn.model_selection import train_test_split
+import lightgbm as lgb
+import numpy as np
+
+# 1. Definindo o Comitê de Estimadores Base
+modelos_base = [
+    ('lgbm', lgb.LGBMRegressor(num_leaves=31, learning_rate=0.08, n_estimators=150, random_state=42)),
+    ('rf', RandomForestRegressor(n_estimators=100, max_depth=12, random_state=42)),
+    ('gbm', GradientBoostingRegressor(n_estimators=150, learning_rate=0.08, max_depth=5, random_state=42)),
+    ('svr', SVR(C=100.0, epsilon=0.05, kernel='rbf'))
+]
+
+# 2. Votação Ponderada para Regressão (VotingRegressor)
+voting_reg = VotingRegressor(
+    estimators=modelos_base,
+    weights=[0.35, 0.25, 0.25, 0.15]
+)
+
+# 3. Stacking com Meta-Modelo Ridge e 5-Fold OOF
+stacking_reg = StackingRegressor(
+    estimators=modelos_base,
+    final_estimator=RidgeCV(alphas=[0.1, 1.0, 10.0]),
+    cv=5,
+    n_jobs=-1
+)
+
+# 4. Implementação Manual de Blending (Holdout Meta-Learning)
+def executar_blending(X, y):
+    X_train, X_holdout, y_train, y_holdout = train_test_split(X, y, test_size=0.3, random_state=42)
+    
+    # Treina Nível 0 nos 70%
+    preds_holdout = []
+    for nome, modelo in modelos_base:
+        modelo.fit(X_train, y_train)
+        preds_holdout.append(modelo.predict(X_holdout))
+    
+    # Cria matriz Z de Holdout (30%)
+    Z_holdout = np.column_stack(preds_holdout)
+    
+    # Treina Meta-Modelo Nível 1 nos 30%
+    meta_modelo = Ridge(alpha=1.0)
+    meta_modelo.fit(Z_holdout, y_holdout)
+    return meta_modelo
+```
+
+---
+
+## 9. Arquitetura de Software & Padrões de Projeto (GoF)
 
 A base de código do projeto implementa padrões arquiteturais de nível industrial:
 
@@ -546,7 +930,7 @@ Isso evita a saturação dos gradientes nas funções de ativação e garante co
 
 ---
 
-## 9. MLOps: Rastreamento & Governança com MLflow
+## 10. MLOps: Rastreamento & Governança com MLflow
 
 Todos os 12 modelos estão registrados no **MLflow Model Registry** sob o servidor local `http://localhost:5000`:
 
@@ -573,7 +957,7 @@ Todos os 12 modelos estão registrados no **MLflow Model Registry** sob o servid
 
 ---
 
-## 10. Simulação Prática de Casos Reais em Ribeirão Preto
+## 11. Simulação Prática de Casos Reais em Ribeirão Preto
 
 Para consolidar o aprendizado, simulamos 3 perfis imobiliários reais submetidos aos 3 melhores modelos do benchmark:
 
@@ -600,10 +984,11 @@ Para consolidar o aprendizado, simulamos 3 perfis imobiliários reais submetidos
 
 ---
 
-## 11. Checklist de Conclusão & Próximos Passos de Produção
+## 12. Checklist de Conclusão & Próximos Passos de Produção
 
 - [x] **Tratamento e Engenharia de Features:** One-Hot Encoding geográfico e target encoding `Media_m2_Zona`.
 - [x] **12 Modelos Implementados e Validados:** Linear, Ridge, Lasso, ElasticNet, Polinomial, Árvore de Decisão, Random Forest, SVR, Rede Neural MLP, Gradient Boosting, XGBoost e LightGBM.
+- [x] **Técnicas Avançadas de Ensemble Documentadas:** Hard Voting, Soft Voting, Bagging, Voting para Regressão, Boosting, Stacking e Blending com diagramas visuais.
 - [x] **Pipelines e Transformadores:** Escalonamento robusto com `TransformedTargetRegressor` e `StandardScaler`.
 - [x] **Rastreabilidade Total:** MLflow Tracking Server e Model Registry com serialização segura `cloudpickle`.
 - [ ] **Próxima Fase:** Construção de API REST em FastAPI / Docker para servir predições em tempo real e criação de painel Streamlit interativo para a equipe comercial.
