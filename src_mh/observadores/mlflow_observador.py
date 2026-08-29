@@ -240,6 +240,7 @@ class MLflowObservador(IObservadorML):
                     name="modelo_scikit_learn",
                     signature=signature,
                     registered_model_name=nome_registry,
+                    serialization_format="cloudpickle",
                 )
                 logger.info(
                     "Modelo registrado no Model Registry sob '%s'.", nome_registry

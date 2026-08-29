@@ -61,6 +61,62 @@ treinamento_simples:
     cv_folds: 5
     scoring: "neg_root_mean_squared_error"
     n_jobs: 4
+  regressao_svr:
+    C: 100.0
+    epsilon: 0.1
+    kernel: "rbf"
+    gamma: "scale"
+    cv_folds: 5
+    scoring: "neg_root_mean_squared_error"
+    n_jobs: 4
+  rede_neural:
+    hidden_layer_sizes: [100, 50]
+    activation: "relu"
+    solver: "adam"
+    alpha: 0.01
+    learning_rate_init: 0.01
+    max_iter: 1000
+    random_state: 42
+    early_stopping: true
+    cv_folds: 5
+    scoring: "neg_root_mean_squared_error"
+    n_jobs: 4
+  gradient_boosting:
+    n_estimators: 150
+    learning_rate: 0.1
+    max_depth: 4
+    min_samples_split: 5
+    min_samples_leaf: 2
+    subsample: 0.9
+    random_state: 42
+    cv_folds: 5
+    scoring: "neg_root_mean_squared_error"
+    n_jobs: 4
+  xgboost:
+    n_estimators: 150
+    learning_rate: 0.08
+    max_depth: 5
+    subsample: 0.85
+    colsample_bytree: 0.85
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    random_state: 42
+    cv_folds: 5
+    scoring: "neg_root_mean_squared_error"
+    n_jobs: 4
+  lightgbm:
+    n_estimators: 150
+    learning_rate: 0.08
+    num_leaves: 31
+    max_depth: -1
+    subsample: 0.85
+    colsample_bytree: 0.85
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    random_state: 42
+    cv_folds: 5
+    scoring: "neg_root_mean_squared_error"
+    n_jobs: 4
 
 turing_parametros:
   regressao_linear:
@@ -91,6 +147,28 @@ turing_parametros:
     max_depth: [5, 10, 15, None]
     min_samples_split: [2, 5, 10]
     min_samples_leaf: [1, 2, 4]
+  regressao_svr:
+    regressor__svr__C: [1.0, 10.0, 100.0, 1000.0]
+    regressor__svr__epsilon: [0.01, 0.1, 0.2]
+    regressor__svr__kernel: ["rbf", "linear"]
+  rede_neural:
+    regressor__mlp__hidden_layer_sizes: [[50], [100, 50], [100, 100]]
+    regressor__mlp__activation: ["relu", "tanh"]
+    regressor__mlp__alpha: [0.0001, 0.01, 1.0]
+  gradient_boosting:
+    n_estimators: [50, 100, 150, 200]
+    learning_rate: [0.05, 0.1, 0.2]
+    max_depth: [3, 4, 5]
+  xgboost:
+    n_estimators: [50, 100, 150, 200]
+    learning_rate: [0.03, 0.08, 0.15]
+    max_depth: [3, 5, 7]
+    subsample: [0.7, 0.85, 1.0]
+  lightgbm:
+    n_estimators: [50, 100, 150, 200]
+    learning_rate: [0.03, 0.08, 0.15]
+    num_leaves: [15, 31, 63]
+    subsample: [0.7, 0.85, 1.0]
 
 validacao_cruzada:
   regressao_linear:
@@ -120,6 +198,33 @@ validacao_cruzada:
     max_depth: 10
     min_samples_split: 5
     min_samples_leaf: 2
+  regressao_svr:
+    C: 100.0
+    epsilon: 0.1
+    kernel: "rbf"
+  rede_neural:
+    hidden_layer_sizes: [100, 50]
+    activation: "relu"
+    alpha: 0.01
+    max_iter: 1000
+  gradient_boosting:
+    n_estimators: 150
+    learning_rate: 0.1
+    max_depth: 4
+    min_samples_split: 5
+    min_samples_leaf: 2
+  xgboost:
+    n_estimators: 150
+    learning_rate: 0.08
+    max_depth: 5
+    subsample: 0.85
+    colsample_bytree: 0.85
+  lightgbm:
+    n_estimators: 150
+    learning_rate: 0.08
+    num_leaves: 31
+    subsample: 0.85
+    colsample_bytree: 0.85
 
 carregador_dados:
   colunas:

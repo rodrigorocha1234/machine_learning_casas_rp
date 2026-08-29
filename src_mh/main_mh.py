@@ -15,6 +15,11 @@ from src_mh.estrategia_modelo.regressao_lasso import RegressaoLassoEstrategia
 from src_mh.estrategia_modelo.regressao_elasticnet import RegressaoElasticNetEstrategia
 from src_mh.estrategia_modelo.arvore_decisao import ArvoreDecisaoEstrategia
 from src_mh.estrategia_modelo.random_forest import RandomForestEstrategia
+from src_mh.estrategia_modelo.regressao_svr import RegressaoSVREstrategia
+from src_mh.estrategia_modelo.rede_neural import RedeNeuralEstrategia
+from src_mh.estrategia_modelo.gradient_boosting import GradientBoostingEstrategia
+from src_mh.estrategia_modelo.xgboost_estrategia import XGBoostEstrategia
+from src_mh.estrategia_modelo.lightgbm_estrategia import LightGBMEstrategia
 from src_mh.observadores.console_observador import ConsoleObservador
 from src_mh.observadores.iobservador_ml import IObservadorML
 from src_mh.observadores.mlflow_observador import MLflowObservador
@@ -161,12 +166,16 @@ class PipelineML(Generic[T, X, Y]):
         """Executa a busca em grade de hiperparâmetros (GridSearchCV) e notifica os observadores (MLflow, etc.)."""
         x_train, x_test, y_train, y_test = self.rodar_preparacao_dados()
 
+        x_completo = pd.concat([x_train, x_test], axis=0)
+        y_completo = pd.concat([y_train, y_test], axis=0)
+
+
         logger.info("INICIANDO TUNING DE HIPERPARÂMETROS NO PIPELINE ML")
 
         self.__notificar_inicio_experimento(
             "Tuning_Hiperparametros_Imoveis_RP",
             {
-                "n_amostras_totais": len(x_train) + len(x_test),
+                "n_amostras_totais": len(x_completo) + len(y_completo),
                 "n_modelos": len(self.__modelos),
             },
         )
@@ -178,11 +187,11 @@ class PipelineML(Generic[T, X, Y]):
                 f"{modelo.nome}_Tuning_Hiperparametros",
                 {
                     "modelo": modelo.nome,
-                    "n_amostras_totais": len(x_train) + len(x_test),
+                    "n_amostras_totais": len(x_completo) + len(y_completo),
                 },
             )
 
-            grid_search = modelo.realizar_grid_search(x_train, y_train)
+            grid_search = modelo.realizar_grid_search(x_completo, y_completo)
 
             resultados_completos = modelo.obter_resultado_grid_search(grid_search)
             resultados_completos["nome_modelo"] = modelo.nome
@@ -369,6 +378,55 @@ if __name__ == "__main__":
         'min_samples_leaf': Config.min_samples_leaf_rf,
         'random_state': 42,
     })
+    modelo_regressao_svr = RegressaoSVREstrategia(params={
+        'C': Config.c_svr,
+        'epsilon': Config.epsilon_svr,
+        'kernel': Config.kernel_svr,
+        'gamma': Config.gamma_svr,
+    })
+    modelo_rede_neural = RedeNeuralEstrategia(params={
+        'hidden_layer_sizes': Config.hidden_layer_sizes_nn,
+        'activation': Config.activation_nn,
+        'solver': Config.solver_nn,
+        'alpha': Config.alpha_nn,
+        'learning_rate_init': Config.learning_rate_init_nn,
+        'max_iter': Config.max_iter_nn,
+        'early_stopping': Config.early_stopping_nn,
+        'random_state': 42,
+    })
+    modelo_gradient_boosting = GradientBoostingEstrategia(params={
+        'n_estimators': Config.n_estimators_gb,
+        'learning_rate': Config.learning_rate_gb,
+        'max_depth': Config.max_depth_gb,
+        'min_samples_split': Config.min_samples_split_gb,
+        'min_samples_leaf': Config.min_samples_leaf_gb,
+        'subsample': Config.subsample_gb,
+        'random_state': 42,
+    })
+    modelo_xgboost = XGBoostEstrategia(params={
+        'n_estimators': Config.n_estimators_xgb,
+        'learning_rate': Config.learning_rate_xgb,
+        'max_depth': Config.max_depth_xgb,
+        'subsample': Config.subsample_xgb,
+        'colsample_bytree': Config.colsample_bytree_xgb,
+        'reg_alpha': Config.reg_alpha_xgb,
+        'reg_lambda': Config.reg_lambda_xgb,
+        'random_state': 42,
+        'n_jobs': 4,
+    })
+    modelo_lightgbm = LightGBMEstrategia(params={
+        'n_estimators': Config.n_estimators_lgb,
+        'learning_rate': Config.learning_rate_lgb,
+        'num_leaves': Config.num_leaves_lgb,
+        'max_depth': Config.max_depth_lgb,
+        'subsample': Config.subsample_lgb,
+        'colsample_bytree': Config.colsample_bytree_lgb,
+        'reg_alpha': Config.reg_alpha_lgb,
+        'reg_lambda': Config.reg_lambda_lgb,
+        'random_state': 42,
+        'n_jobs': 4,
+        'verbose': -1,
+    })
 
     mlflow_obs = MLflowObservador(
         tracking_uri=Config.tracking_uri,
@@ -381,17 +439,22 @@ if __name__ == "__main__":
         carregar_dados=carregar_dados,
         prepara_dados=prepara_dados,
         modelos=[
-            modelo_regressao_linear,
-            modelo_regressao_ridge,
-            modelo_regressao_lasso,
-            modelo_regressao_elasticnet,
+            # modelo_regressao_linear,
+            # modelo_regressao_ridge,
+            # modelo_regressao_lasso,
+            # modelo_regressao_elasticnet,
             modelo_arvore_decisao,
-            modelo_regressao_polinomial,
-            modelo_random_forest,
+            # modelo_regressao_polinomial,
+            # modelo_random_forest,
+            # modelo_regressao_svr,
+            # modelo_rede_neural,
+            # modelo_gradient_boosting,
+            # modelo_xgboost,
+            # modelo_lightgbm,
         ],
         observadores=[console_obs, mlflow_obs],
     )
-    pml.rodar_treinamento_simples()
+    # pml.rodar_treinamento_simples()
     # pml.realizar_tuning_parametros()
-    # pml.realizar_validacao_cruzada()
+    pml.realizar_validacao_cruzada()
 
